@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Tally 🤖</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Tally">
+</head>
+<body class="bg-white text-stone-900 font-mono antialiased selection:bg-stone-200">
+
+  <div id="app" class="max-w-md mx-auto min-h-screen p-4 pb-28 flex flex-col">
+    <header class="flex justify-between items-center mb-6 pt-2 border-b border-stone-200 pb-3">
+      <h1 class="text-md font-black tracking-tighter">TALLY 🤖</h1>
+      <button onclick="toggleSettings()" class="text-stone-400 hover:text-stone-900 font-bold transition-colors p-1 text-[10px] tracking-wider uppercase">Settings</button>
+    </header>
+
+    <div id="settings" class="hidden bg-stone-50 p-4 rounded-xl border border-stone-200 mb-6 flex flex-col gap-3 text-xs">
+      <h3 class="font-bold tracking-tight uppercase text-stone-700">Configuration</h3>
+      <div>
+        <label class="block mb-1 text-stone-500 font-bold uppercase text-[9px]">Gemini API Key</label>
+        <input type="password" id="apiKeyInput" class="w-full p-2 border border-stone-300 rounded bg-white font-mono text-xs focus:outline-none">
+      </div>
+      <div>
+        <label class="block mb-1 text-stone-500 font-bold uppercase text-[9px]">Supabase URL</label>
+        <input type="text" id="sbUrlInput" class="w-full p-2 border border-stone-300 rounded bg-white font-mono text-xs focus:outline-none">
+      </div>
+      <div>
+        <label class="block mb-1 text-stone-500 font-bold uppercase text-[9px]">Supabase Anon Key</label>
+        <input type="password" id="sbKeyInput" class="w-full p-2 border border-stone-300 rounded bg-white font-mono text-xs focus:outline-none">
+      </div>
+      <div>
+        <label class="block mb-1 text-stone-500 font-bold uppercase text-[9px]">Sync Phrase</label>
+        <input type="text" id="syncKeyInput" class="w-full p-2 border border-stone-300 rounded bg-white font-mono text-xs focus:outline-none">
+      </div>
+      <button onclick="saveSettings()" class="w-full bg-stone-900 text-white font-bold py-2 rounded hover:bg-stone-800 transition-colors uppercase text-[10px] tracking-wider">Save configurations</button>
+    </div>
+
+    <div id="missingKeyBanner" class="hidden border border-dashed border-stone-400 p-3 text-xs text-stone-600 mb-6 bg-stone-50 text-center">
+      ⚠️ Configuration required. Open settings to map your Gemini API Key.
+    </div>
+
+    <div id="view-log" class="flex flex-col gap-6 pt-2">
+      <div id="quickNudge" class="text-xs italic text-stone-500 tracking-tight pl-1 select-none leading-relaxed border-l border-stone-300 pl-3 py-0.5">
+        ✨ Log your day conversationally. Estimates focus on realism, capturing uncertainty over forced precision.
+      </div>
+
+      <form id="logForm" onsubmit="handleLogSubmit(event)" class="flex flex-col gap-4">
+        <div class="flex justify-between items-center">
+          <span class="text-[10px] font-bold tracking-wider text-stone-400 uppercase">New Entry</span>
+          <input type="date" id="entryDate" class="text-xs border border-stone-200 rounded px-2 py-0.5 bg-stone-50 font-mono text-stone-600 focus:outline-none">
+        </div>
+        <textarea id="rawText" rows="6" required placeholder="Type organically... (e.g., Skyr raspberry, shared a bowl of pasta with Sam, handful of blueberries)" class="w-full p-3.5 border border-stone-200 rounded-lg text-sm font-sans focus:outline-none focus:border-stone-900 placeholder:text-stone-300 resize-none bg-white shadow-2xs leading-relaxed"></textarea>
+        
+        <div class="flex items-center justify-between">
+          <label class="text-[11px] text-stone-400 hover:text-stone-700 cursor-pointer flex items-center gap-1 font-mono transition-colors select-none">
+            📷 <span id="photoStatusText">Add label/photo</span>
+            <input type="file" id="photoInput" accept="image/*" multiple class="hidden" onchange="updatePhotoStatus()">
+          </label>
+          <button type="submit" id="submitBtn" class="bg-stone-900 text-white font-bold text-xs px-6 py-2.5 rounded hover:bg-stone-800 transition-all tracking-wider uppercase">Log entry</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="view-dashboard" class="hidden flex flex-col gap-6">
+      
+      <div id="snapshotContainer" class="hidden border border-stone-200 p-3.5 rounded-lg bg-stone-50 text-[11px] leading-relaxed">
+        <div class="font-bold uppercase tracking-wider text-stone-400 mb-2 text-[9px]">Last 30 Days Context</div>
+        <div class="grid grid-cols-2 gap-3 text-stone-700">
+          <div><span class="font-bold text-stone-900">Protein baseline</span><br><span class="text-xs">📈 Stable baseline</span></div>
+          <div><span class="font-bold text-stone-900">Exercise streak</span><br><span class="text-xs">🔥 Consistent</span></div>
+          <div><span class="font-bold text-stone-900">Alcohol frequency</span><br><span class="text-xs">⚖️ Stable</span></div>
+          <div><span class="font-bold text-stone-900">Tracking Calibration</span><br><span class="text-xs">🛡️ Prioritizing Uncertainty</span></div>
+        </div>
+      </div>
+
+      <div>
+        <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">Today's Macro Estimates</h3>
+        <div class="grid grid-cols-3 gap-2 text-center">
+          <div class="border border-stone-200 p-2.5 rounded bg-white">
+            <div class="text-[9px] text-stone-400 uppercase font-bold tracking-tight">Calories In</div>
+            <div class="text-md font-black mt-0.5 text-stone-800"><span id="totalCal">0</span> <span class="text-[9px] font-normal text-stone-400">kcal</span></div>
+          </div>
+          <div class="border border-stone-200 p-2.5 rounded bg-white">
+            <div class="text-[9px] text-stone-400 uppercase font-bold tracking-tight">Protein</div>
+            <div class="text-md font-black mt-0.5 text-stone-800"><span id="totalProtein">0</span> <span class="text-[9px] font-normal text-stone-400">g</span></div>
+          </div>
+          <div class="border border-stone-200 p-2.5 rounded bg-white">
+            <div class="text-[9px] text-stone-400 uppercase font-bold tracking-tight">Calories Burned</div>
+            <div class="text-md font-black text-stone-600 mt-0.5"><span id="totalBurned">0</span> <span class="text-[9px] font-normal text-stone-400">kcal</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">Commonly Logged</h3>
+        <div id="commonContainer" class="border border-stone-200 rounded-lg p-3 text-xs bg-white text-stone-800 flex flex-wrap gap-2">
+          <span class="text-stone-400 italic">Common items appear over time...</span>
+        </div>
+      </div>
+
+      <div>
+        <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">Pattern Mode Metrics</h3>
+        <div id="patternsContainer" class="border border-stone-200 rounded-lg p-3 text-xs bg-white text-stone-800 space-y-2 leading-relaxed">
+          <p class="text-stone-400 italic">Analyzing behavioral logs for dietary variety benchmarks...</p>
+        </div>
+      </div>
+
+      <div>
+        <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">Timeline Summary (Today)</h3>
+        <div id="logFeed" class="flex flex-col gap-3">
+          </div>
+      </div>
+
+      <div class="border border-stone-100 bg-stone-50 rounded-lg p-3 text-[10px] text-stone-400 leading-normal mt-4">
+        <span class="font-bold text-stone-500 uppercase tracking-wide text-[9px] block mb-0.5">Healthy Baseline Ranges</span>
+        * **Healthy Minimum Range:** ~1,500–1,800 kcal/day | ~50–65g protein<br>
+        * **General Recommended Range:** ~2,000–2,400 kcal/day | ~70–90g protein<br>
+        * **Athletic/High-Performance Range:** Active tracking context adjusted individually. 
+        <br><br>
+        <span class="text-amber-700 font-bold">⚠️ Realism Note:</span> Confident values require explicit packaging nutrition labels or exact gram counts. If vague descriptions are typed, information defaults to dynamic placeholder ranges with strict real-world uncertainty markers.
+      </div>
+    </div>
+
+    <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-stone-200 shadow-xs py-3.5 px-6 max-w-md mx-auto flex justify-around items-center z-20">
+      <button onclick="switchView('log')" id="nav-log" class="text-stone-900 font-black text-xs uppercase tracking-widest border-b-2 border-stone-900 pb-0.5 transition-all cursor-pointer">LOG INPUT</button>
+      <button onclick="switchView('dashboard')" id="nav-dashboard" class="text-stone-400 font-bold text-xs uppercase tracking-widest border-b-2 border-transparent pb-0.5 transition-all cursor-pointer">REFLECT & TRENDS</button>
+    </nav>
+  </div>
+
+  <script>
+    let appState = JSON.parse(localStorage.getItem('body_admin_data')) || { entries: [] };
+    let supabaseClient = null;
+    
+    // Safety check for old appState definitions
+    if (!appState.entries || !Array.isArray(appState.entries)) {
+      appState = { entries: [] };
+    }
+    
+    document.getElementById('entryDate').value = new Date().toISOString().split('T')[0];
+
+    function updatePhotoStatus() {
+      const input = document.getElementById('photoInput');
+      const statusText = document.getElementById('photoStatusText');
+      const labelContainer = statusText.parentElement;
+      
+      if (input.files && input.files.length > 0) {
+        const count = input.files.length;
+        statusText.innerText = `${count} photo${count > 1 ? 's' : ''} attached`;
+        labelContainer.className = "text-[11px] text-emerald-600 font-black flex items-center gap-1 font-mono transition-colors select-none";
+      } else {
+        statusText.innerText = "Add label/photo";
+        labelContainer.className = "text-[11px] text-stone-400 hover:text-stone-700 cursor-pointer flex items-center gap-1 font-mono transition-colors select-none";
+      }
+    }
+
+    function switchView(target) {
+      if (target === 'log') {
+        document.getElementById('view-log').classList.remove('hidden');
+        document.getElementById('view-dashboard').classList.add('hidden');
+        document.getElementById('nav-log').className = "text-stone-900 font-black text-xs uppercase tracking-widest border-b-2 border-stone-900 pb-0.5 transition-all cursor-pointer";
+        document.getElementById('nav-dashboard').className = "text-stone-400 font-bold text-xs uppercase tracking-widest border-b-2 border-transparent pb-0.5 transition-all cursor-pointer";
+      } else {
+        document.getElementById('view-log').classList.add('hidden');
+        document.getElementById('view-dashboard').classList.remove('hidden');
+        document.getElementById('nav-log').className = "text-stone-400 font-bold text-xs uppercase tracking-widest border-b-2 border-transparent pb-0.5 transition-all cursor-pointer";
+        document.getElementById('nav-dashboard').className = "text-stone-900 font-black text-xs uppercase tracking-widest border-b-2 border-stone-900 pb-0.5 transition-all cursor-pointer";
+        
+        if (appState.entries.length > 0) {
+          document.getElementById('snapshotContainer').classList.remove('hidden');
+        }
+        calculateAdvancedAnalytics();
+        renderDashboard();
+      }
+    }
+
+    function initSupabase() {
+      const url = localStorage.getItem('sb_url');
+      const key = localStorage.getItem('sb_key');
+      const syncKey = localStorage.getItem('sync_phrase');
+
+      if (!syncKey) {
+        const randId = 'tally-' + Math.random().toString(36).substring(2, 7);
+        localStorage.setItem('sync_phrase', randId);
+        document.getElementById('syncKeyInput').value = randId;
+      } else {
+        document.getElementById('syncKeyInput').value = syncKey;
+      }
+
+      if (url && key) {
+        supabaseClient = supabase.createClient(url, key);
+        document.getElementById('sbUrlInput').value = url;
+        document.getElementById('sbKeyInput').value = key;
+        pullDataFromCloud();
+      }
+    }
+
+    function checkApiKey() {
+      const key = localStorage.getItem('gemini_key');
+      document.getElementById('missingKeyBanner').classList.toggle('hidden', !!key);
+      if(key) document.getElementById('apiKeyInput').value = key;
+    }
+
+    function toggleSettings() {
+      document.getElementById('settings').classList.toggle('hidden');
+    }
+
+    function saveSettings() {
+      localStorage.setItem('gemini_key', document.getElementById('apiKeyInput').value.trim());
+      localStorage.setItem('sb_url', document.getElementById('sbUrlInput').value.trim());
+      localStorage.setItem('sb_key', document.getElementById('sbKeyInput').value.trim());
+      localStorage.setItem('sync_phrase', document.getElementById('syncKeyInput').value.trim());
+      
+      toggleSettings();
+      checkApiKey();
+      initSupabase();
+    }
+
+    async function pullDataFromCloud() {
+      if (!supabaseClient) return;
+      const syncKey = localStorage.getItem('sync_phrase');
+      try {
+        const { data, error } = await supabaseClient.from('sync_entries').select('*').eq('sync_key', syncKey);
+        if (error) throw error;
+        
+        const localCountBefore = appState.entries.length;
+        const cloudCount = data ? data.length : 0;
+        
+        console.log(`[Sync Debug] Local entries: ${localCountBefore} | Cloud entries fetched: ${cloudCount} | Active phrase: "${syncKey}"`);
+
+        if (data && data.length > 0) {
+          // Merge by unique ID rather than overwriting the state array cleanly
+          const localMap = new Map(appState.entries.map(e => [e.id, e]));
+          
+          data.forEach(row => {
+            localMap.set(row.id, {
+              id: row.id,
+              date: row.entry_date,
+              rawText: row.raw_text,
+              parsed: row.parsed_json
+            });
+          });
+          
+          appState.entries = Array.from(localMap.values());
+          localStorage.setItem('body_admin_data', JSON.stringify(appState));
+          renderDashboard();
+          calculateAdvancedAnalytics();
+        }
+      } catch (err) { 
+        console.error("[Sync Error]", err); 
+      }
+    }
+
+    function calculateAdvancedAnalytics() {
+      const patternsContainer = document.getElementById('patternsContainer');
+      const commonContainer = document.getElementById('commonContainer');
+
+      if (!appState.entries || appState.entries.length === 0) return;
+
+      let itemCounts = {};
+      let fruitCount = 0;
+      let vegCount = 0;
+      let proteinMatches = 0;
+
+      appState.entries.forEach(entry => {
+        const txt = (entry.rawText || "").toLowerCase();
+        if(txt.includes('skyr') || txt.includes('protein') || txt.includes('chicken') || txt.includes('salmon') || txt.includes('meat')) proteinMatches++;
+        if(txt.includes('blueberry') || txt.includes('blueberries') || txt.includes('apple') || txt.includes('banana') || txt.includes('fruit')) fruitCount++;
+        if(txt.includes('salad') || txt.includes('broccoli') || txt.includes('vegetables') || txt.includes('spinach')) vegCount++;
+
+        const parsed = entry.parsed || {};
+        // Use multi-key lookup fallback strategy
+        const foodsList = parsed.foods || parsed.food_items || parsed.items || parsed.meals || parsed.foodLogs || [];
+        if (Array.isArray(foodsList)) {
+          foodsList.forEach(f => {
+            let name = (f.name || f.food || "").toLowerCase().trim();
+            if (name) itemCounts[name] = (itemCounts[name] || 0) + 1;
+          });
+        }
+      });
+
+      let sortedItems = Object.entries(itemCounts).sort((a,b) => b[1] - a[1]).slice(0, 5);
+      if (sortedItems.length > 0) {
+        commonContainer.innerHTML = sortedItems.map(([name, count]) => {
+          return `<span class="bg-stone-100 border border-stone-200 text-stone-700 font-mono px-2 py-1 rounded text-[11px] capitalize">${name} (${count}x)</span>`;
+        }).join('');
+      }
+
+      let patternsHtml = "<ul class='list-disc pl-4 space-y-1.5'>";
+      patternsHtml += `<li>🥣 Breakfast/Protein items noted on ${proteinMatches} logged days this cycle.</li>`;
+      patternsHtml += `<li>🍏 Fruit sources logged roughly ${fruitCount} time(s) across your historical log index.</li>`;
+      patternsHtml += `<li>🥦 Green vegetable targets logged: ${vegCount > 0 ? vegCount + ' times' : 'None explicitly detected yet'}.</li>`;
+      patternsHtml += "</ul>";
+      
+      patternsContainer.innerHTML = patternsHtml;
+    }
+
+    function renderDashboard() {
+      const targetDate = document.getElementById('entryDate').value;
+      
+      // Handle timestamp slicing normalization securely
+      const daysEntries = appState.entries.filter(e => {
+        if (!e.date) return false;
+        return e.date.split('T')[0] === targetDate;
+      });
+      
+      let cal = 0;
+      let prot = 0;
+      let burn = 0;
+      
+      const feedEl = document.getElementById('logFeed');
+      feedEl.innerHTML = '';
+
+      if (daysEntries.length === 0) {
+        feedEl.innerHTML = '<p class="text-xs text-stone-300 italic py-4 text-center">No active context tracked for this specific day block.</p>';
+      } else {
+        daysEntries.forEach(entry => {
+          const parsed = entry.parsed || {};
+          console.log("Parsed entry:", parsed);
+          
+          let itemListHtml = '';
+          let foundFood = false;
+
+          // Robust check for various alternative schema array assignments
+          const foodsList = parsed.foods || parsed.food_items || parsed.items || parsed.meals || parsed.foodLogs;
+          
+          if (Array.isArray(foodsList) && foodsList.length > 0) {
+            foundFood = true;
+            itemListHtml = foodsList.map(f => {
+              const foodName = f.name || f.food || "Logged Item";
+              cal += Number(f.calories || 0);
+              prot += Number(f.protein || 0);
+              
+              const foodConfidence = f.confidence || parsed.confidence_rating || 'Medium';
+              return `<li class="text-stone-700">✨ ${foodName} <span class="text-[10px] text-stone-400">(${f.calories || 0} kcal, ${f.protein || 0}g, ${foodConfidence})</span></li>`;
+            }).join('');
+          } else {
+            itemListHtml = `<li class="text-amber-600 italic">⚠️ Entry saved, but structured food data was not recognized.</li>`;
+          }
+          
+          // Exercise schema matching alternatives block
+          const exerciseList = parsed.exercises || parsed.exercise_logs || parsed.activities || parsed.workouts;
+          if (Array.isArray(exerciseList)) {
+            exerciseList.forEach(e => {
+              burn += Number(e.caloriesBurned || e.calories || e.burned || 0);
+            });
+          }
+
+          // Append timeline block displaying the foundational text entry first
+          feedEl.innerHTML += `
+            <div class="border border-stone-200 p-3 bg-white rounded shadow-2xs text-xs space-y-2">
+              <div class="font-sans italic text-stone-900 bg-stone-50 p-2 rounded border-l-2 border-stone-300">
+                "${entry.rawText || "No conversational description written."}"
+              </div>
+              <ul class="list-none space-y-1 pl-1">${itemListHtml}</ul>
+            </div>
+          `;
+        });
+
+        // Precision Math Protections
+        cal = Math.round(cal);
+        prot = Math.round(prot);
+        burn = Math.round(burn);
+
+        if (cal < 1100 && cal > 0) {
+           feedEl.innerHTML += `
+             <div class="mt-2 text-[10px] bg-amber-50 text-amber-800 border border-amber-200 rounded p-2 leading-normal">
+               ⚠️ **Uncertainty Note:** Estimated totals look unusually low for an active day profile. This suggests logs might be incomplete or specified metrics lack explicit packaging gram volumes.
+             </div>
+           `;
+        }
+      }
+
+      document.getElementById('totalCal').innerText = cal;
+      document.getElementById('totalProtein').innerText = prot;
+      document.getElementById('totalBurned').innerText = burn;
+    }
+
+    async function handleLogSubmit(e) {
+      e.preventDefault();
+      const txtEl = document.getElementById('rawText');
+      const dateEl = document.getElementById('entryDate');
+      const btn = document.getElementById('submitBtn');
+      const text = txtEl.value.trim();
+      const apiKey = localStorage.getItem('gemini_key');
+      const syncKey = localStorage.getItem('sync_phrase');
+
+      if (!apiKey) {
+        alert("Please set your Gemini API key inside your configurations panel first.");
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerText = "SAVING...";
+
+      try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{
+                text: `Parse this conversational log into structured JSON format following strict realism, uncertainty, and non-obsessive tracking constraints. 
+                
+                Rules:
+                1. Never assume exact quantities when user description is vague.
+                2. Include a top-level "confidence_rating": "High" (nutrition label/grams), "Medium" (standard item/portion), or "Low" (vague wording like "some", "handful", "split with someone", "a bowl").
+                3. If a meal is shared, assume an explicit division rule (e.g., "Assumed you ate approximately 40% of the meal.") and put that string inside a "confidence_reason" property.
+                4. Focus on realistic, whole-integer estimates against healthy minimum ranges (~1,500-1,800kcal) and general recommended baselines (~2000-2400kcal), NOT hyper-inflated muscle bodybuilding protein standards.
+                5. Do not use obsessive wording. Keep strings neutral.
+
+                JSON Template Structure:
+                {
+                  "confidence_rating": "High/Medium/Low",
+                  "confidence_reason": "string detailing assumptions or portion uncertainty if any",
+                  "foods": [{ "name": "Clean name", "calories": 0, "protein": 0, "confidence": "High/Medium/Low" }],
+                  "exercises": [{ "activity": "boxing/etc", "caloriesBurned": 0 }],
+                  "nudge": "Short dynamic tracking calibration observation under 12 words"
+                }
+
+                Text input: "${text}"`
+              }]
+            }],
+            generationConfig: { responseMimeType: "application/json" }
+          })
+        });
+
+        if (!response.ok) throw new Error("API stream mapping failed");
+
+        const resData = await response.json();
+        const jsonText = resData.candidates[0].content.parts[0].text;
+        const parsedContent = JSON.parse(jsonText);
+
+        const localItem = {
+          id: crypto.randomUUID(),
+          date: dateEl.value,
+          rawText: text,
+          parsed: parsedContent
+        };
+        
+        appState.entries.push(localItem);
+        localStorage.setItem('body_admin_data', JSON.stringify(appState));
+        
+        if (supabaseClient) {
+          await supabaseClient.from('sync_entries').insert({
+            id: localItem.id,
+            sync_key: syncKey,
+            entry_date: localItem.date,
+            raw_text: localItem.rawText,
+            parsed_json: localItem.parsed
+          });
+        }
+
+        txtEl.value = '';
+        document.getElementById('photoInput').value = ''; 
+        updatePhotoStatus(); 
+        
+        if (parsedContent.nudge) {
+          document.getElementById('quickNudge').innerText = "✨ " + parsedContent.nudge;
+        }
+        
+        renderDashboard();
+        calculateAdvancedAnalytics();
+        alert("Entry successfully recorded.");
+
+      } catch (err) {
+        console.error(err);
+        alert("Execution pipeline encountered a schema mismatch.");
+      } finally {
+        btn.disabled = false;
+        btn.innerText = "LOG ENTRY";
+      }
+    }
+
+    document.getElementById('entryDate').addEventListener('change', renderDashboard);
+    checkApiKey();
+    initSupabase();
+    calculateAdvancedAnalytics();
+    renderDashboard();
+  </script>
+</body>
+</html>
