@@ -55,6 +55,32 @@
 
       <button type="submit" id="submitBtn" class="bg-stone-900 text-white font-bold text-xs px-6 py-2.5 rounded uppercase tracking-wider">Add Entry</button>
     </form>
+
+    <div id="saveKnownPrompt" class="hidden border border-stone-200 rounded-lg p-3 bg-stone-50 flex flex-col gap-2">
+      <span class="text-[10px] text-stone-500">Save this as a known food for next time?</span>
+      <input type="text" id="knownFoodName" class="w-full p-2 border border-stone-300 rounded text-xs">
+      <div class="flex gap-2">
+        <button onclick="confirmSaveKnownFood()" class="flex-1 bg-stone-900 text-white text-[10px] uppercase tracking-wider py-2 rounded">Save</button>
+        <button onclick="dismissSaveKnownPrompt()" class="flex-1 text-stone-400 text-[10px] uppercase tracking-wider py-2 rounded border border-stone-200">Skip</button>
+      </div>
+    </div>
+
+    <div class="border-t border-stone-100 pt-3">
+      <button onclick="toggleKnownFoods()" class="text-[10px] text-stone-400 uppercase tracking-wider">📚 Known Foods (<span id="knownFoodsCount">0</span>)</button>
+      <div id="knownFoodsPanel" class="hidden mt-2 flex flex-col gap-2">
+        <div id="knownFoodsList" class="flex flex-col gap-1 text-[11px] text-stone-500"></div>
+        <button onclick="toggleManualKnownForm()" class="text-[10px] text-stone-400 uppercase tracking-wider text-left">+ Add manually</button>
+        <div id="manualKnownForm" class="hidden flex flex-col gap-2 border border-stone-200 rounded-lg p-3">
+          <input type="text" id="mkName" placeholder="Name" class="w-full p-2 border border-stone-300 rounded text-xs">
+          <div class="flex gap-2">
+            <input type="number" id="mkCalories" placeholder="Calories" class="w-1/2 p-2 border border-stone-300 rounded text-xs">
+            <input type="number" id="mkProtein" placeholder="Protein (g)" class="w-1/2 p-2 border border-stone-300 rounded text-xs">
+          </div>
+          <input type="text" id="mkNotes" placeholder="Notes (optional) — e.g. portion details" class="w-full p-2 border border-stone-300 rounded text-xs">
+          <button onclick="addManualKnownFood()" class="bg-stone-900 text-white text-[10px] uppercase tracking-wider py-2 rounded">Save Known Food</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- TRENDS TAB -->
@@ -118,6 +144,8 @@
 <script>
   let supabaseClient = null;
   let entries = [];
+  let knownFoods = [];
+  let lastParsed = null;
   let pendingPhoto = null; // { base64, mimeType }
 
   function todayStr() { return new Date().toISOString().split('T')[0]; }
@@ -161,6 +189,7 @@
       try {
         supabaseClient = supabase.createClient(url, key);
         fetchEntries();
+        fetchKnownFoods();
       } catch (err) {
         showBanner('Could not connect to Supabase: ' + err.message, 'error');
       }
@@ -181,6 +210,70 @@
     clearBanner();
     entries = data || [];
     render();
+  }
+
+  async function fetchKnownFoods() {
+    if (!supabaseClient) return;
+    const { data, error } = await supabaseClient.from('known_foods').select('*').order('name', { ascending: true });
+    if (error) { showBanner('Could not load known foods: ' + error.message, 'error'); return; }
+    knownFoods = data || [];
+    renderKnownFoods();
+  }
+
+  function toggleKnownFoods() { document.getElementById('knownFoodsPanel').classList.toggle('hidden'); }
+  function toggleManualKnownForm() { document.getElementById('manualKnownForm').classList.toggle('hidden'); }
+
+  function renderKnownFoods() {
+    document.getElementById('knownFoodsCount').innerText = knownFoods.length;
+    const list = document.getElementById('knownFoodsList');
+    if (knownFoods.length === 0) {
+      list.innerHTML = '<p class="italic text-stone-300">No known foods saved yet.</p>';
+      return;
+    }
+    list.innerHTML = knownFoods.map(f => `
+      <div class="flex justify-between border-b border-stone-100 py-1">
+        <span>${f.name}${f.notes ? ' <span class="text-stone-300">— ' + f.notes + '</span>' : ''}</span>
+        <span class="shrink-0 ml-2">${f.calories} kcal · ${f.protein}g</span>
+      </div>`).join('');
+  }
+
+  async function addManualKnownFood() {
+    const name = document.getElementById('mkName').value.trim();
+    const calories = Number(document.getElementById('mkCalories').value) || 0;
+    const protein = Number(document.getElementById('mkProtein').value) || 0;
+    const notes = document.getElementById('mkNotes').value.trim();
+    if (!name) { showBanner('Give the known food a name first.', 'error'); return; }
+    if (!supabaseClient) return;
+
+    const { error } = await supabaseClient.from('known_foods').insert({ name, calories, protein, notes });
+    if (error) { showBanner('Could not save known food: ' + error.message, 'error'); return; }
+
+    document.getElementById('mkName').value = '';
+    document.getElementById('mkCalories').value = '';
+    document.getElementById('mkProtein').value = '';
+    document.getElementById('mkNotes').value = '';
+    await fetchKnownFoods();
+    showBanner('Saved "' + name + '" as a known food.', 'warn');
+  }
+
+  function dismissSaveKnownPrompt() {
+    document.getElementById('saveKnownPrompt').classList.add('hidden');
+    lastParsed = null;
+  }
+
+  async function confirmSaveKnownFood() {
+    const name = document.getElementById('knownFoodName').value.trim();
+    if (!name || !lastParsed || !supabaseClient) return;
+    const { error } = await supabaseClient.from('known_foods').insert({
+      name,
+      calories: lastParsed.calories,
+      protein: lastParsed.protein,
+      notes: lastParsed.notes || null
+    });
+    if (error) { showBanner('Could not save known food: ' + error.message, 'error'); return; }
+    dismissSaveKnownPrompt();
+    await fetchKnownFoods();
+    showBanner('Saved "' + name + '" as a known food.', 'warn');
   }
 
   function onPhotoChange() {
@@ -209,7 +302,7 @@
   }
 
   const PRIMARY_MODEL = 'gemini-2.5-flash';
-  const FALLBACK_MODEL = 'gemini-2.0-flash';
+  const FALLBACK_MODEL = 'gemini-2.5-flash-lite';
 
   // Tries the primary model twice (immediate + short backoff), then falls
   // back to a second model if the primary is still overloaded (HTTP 503).
@@ -246,12 +339,17 @@
   }
 
   async function callGemini(text, photo) {
+    const knownFoodsList = knownFoods.length
+      ? knownFoods.map(f => `- "${f.name}": ${f.calories} kcal, ${f.protein}g protein${f.notes ? ' (' + f.notes + ')' : ''}`).join('\n')
+      : null;
+
     const promptText = `Parse this food/activity log into JSON.
 
 Rules:
 - If exact amounts aren't given, estimate generously on the higher side for calories and portion sizes rather than underestimating — the user is tracking to lose weight and prefers to overcount intake when unsure.
 - If a photo is attached, identify the food and estimate realistic portion sizes from it, combined with any text given.
 - Keep the summary short and plain.
+${knownFoodsList ? `\nThis person has a list of previously saved "known foods" with verified nutrition values:\n${knownFoodsList}\n\nIf the log clearly refers to one of these (exact match or close variant, e.g. same brand/dish), use its saved calories/protein values exactly, scaling proportionally if a different portion is mentioned (e.g. "half" = divide by 2). Only use a known food's numbers if you're confident it's the same item — otherwise estimate fresh as usual.` : ''}
 
 Return ONLY this JSON shape, no other text:
 {"summary": "short clean one-line description", "calories": 0, "protein": 0, "exercise_calories": 0}
@@ -304,6 +402,10 @@ Text log: "${text || '(none — see photo)'}"`;
       dateEl.value = todayStr();
       await fetchEntries();
       showBanner('Saved: ' + (parsed.summary || text), 'warn');
+
+      lastParsed = parsed;
+      document.getElementById('knownFoodName').value = parsed.summary || text;
+      document.getElementById('saveKnownPrompt').classList.remove('hidden');
 
     } catch (err) {
       showBanner(err.message, 'error');
