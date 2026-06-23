@@ -208,8 +208,44 @@
     document.getElementById('photoLabel').innerText = '📷 Attach a photo of the meal (optional)';
   }
 
-  async function callGemini(text, photo) {
+  const PRIMARY_MODEL = 'gemini-2.5-flash';
+  const FALLBACK_MODEL = 'gemini-2.0-flash';
+
+  // Tries the primary model twice (immediate + short backoff), then falls
+  // back to a second model if the primary is still overloaded (HTTP 503).
+  // Any non-503 error (bad key, quota, etc.) fails immediately — no point retrying those.
+  async function callGeminiWithRetry(body) {
+    const plan = [
+      [PRIMARY_MODEL, 0],
+      [PRIMARY_MODEL, 1500],
+      [FALLBACK_MODEL, 0],
+      [FALLBACK_MODEL, 2000],
+    ];
     const apiKey = localStorage.getItem('gemini_key');
+    let lastErr = null;
+
+    for (const [model, delay] of plan) {
+      if (delay) await new Promise(r => setTimeout(r, delay));
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      let response;
+      try {
+        response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+      } catch (networkErr) {
+        lastErr = new Error('Network error: ' + networkErr.message);
+        continue;
+      }
+      if (response.ok) return response;
+      if (response.status === 503) {
+        lastErr = new Error(`${model} is overloaded (HTTP 503)`);
+        continue;
+      }
+      const errBody = await response.text();
+      throw new Error(`Gemini error (HTTP ${response.status}): ${errBody.slice(0, 200)}`);
+    }
+    throw lastErr || new Error('Gemini request failed after retries.');
+  }
+
+  async function callGemini(text, photo) {
     const promptText = `Parse this food/activity log into JSON.
 
 Rules:
@@ -230,17 +266,7 @@ Text log: "${text || '(none — see photo)'}"`;
       generationConfig: { responseMimeType: "application/json" }
     });
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-    let response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
-
-    if (!response.ok && response.status === 503) {
-      await new Promise(r => setTimeout(r, 1500));
-      response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
-    }
-    if (!response.ok) {
-      const errBody = await response.text();
-      throw new Error(`Gemini error (HTTP ${response.status}): ${errBody.slice(0, 200)}`);
-    }
+    const response = await callGeminiWithRetry(body);
     const data = await response.json();
     return JSON.parse(data.candidates[0].content.parts[0].text);
   }
@@ -372,17 +398,12 @@ Text log: "${text || '(none — see photo)'}"`;
     btn.disabled = true;
     btn.innerText = 'ANALYZING...';
     try {
-      const apiKey = localStorage.getItem('gemini_key');
       const prompt = `Here are someone's last 30 days of food/exercise logs as JSON: ${JSON.stringify(recent)}.
 Find 2-4 real, specific behavioral patterns or correlations (e.g. low protein after exercise days, rising frequency of a particular food/drink, weekday vs weekend differences). Be direct and practical, like a friend pointing something out — not clinical, not vague. If nothing meaningful stands out, say so plainly instead of inventing patterns.
 Return ONLY a JSON array of short strings, each under 15 words, no other text.`;
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-      const res = await fetch(url, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } })
-      });
-      if (!res.ok) throw new Error(`Gemini error (HTTP ${res.status})`);
+      const body = JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } });
+      const res = await callGeminiWithRetry(body);
       const data = await res.json();
       const insights = JSON.parse(data.candidates[0].content.parts[0].text);
       box.innerHTML = '<ul class="list-disc pl-4 space-y-1.5">' + insights.map(i => `<li>${i}</li>`).join('') + '</ul>';
