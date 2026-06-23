@@ -57,7 +57,7 @@
         
         <div class="flex items-center justify-between">
           <label class="text-[11px] text-stone-400 hover:text-stone-700 cursor-pointer flex items-center gap-1 font-mono transition-colors select-none">
-            📷 <span id="photoStatusText">Add meal photo / nutrition label</span>
+            📷 <span id="photoStatusText">Add label/photo</span>
             <input type="file" id="photoInput" accept="image/*" class="hidden" onchange="updatePhotoStatus()">
           </label>
           <button type="submit" id="submitBtn" class="bg-stone-900 text-white font-bold text-xs px-6 py-2.5 rounded hover:bg-stone-800 transition-all tracking-wider uppercase">Log entry</button>
@@ -67,14 +67,11 @@
 
     <div id="view-dashboard" class="hidden flex flex-col gap-6">
       
-      <div id="debugPanel" class="border border-red-200 bg-red-50/50 p-3 rounded-lg text-[11px] font-mono space-y-1 text-stone-700">
-        <div class="font-black text-red-700 uppercase tracking-wider text-[9px] mb-1">🛠️ Diagnostic Inspector</div>
-        <div>Total Local Entries (`appState`): <span id="debugTotalLocal" class="font-bold text-stone-900">0</span></div>
-        <div>Selected Dashboard Date: <span id="debugSelectedDate" class="font-bold text-stone-900">-</span></div>
-        <div>Matching Current Date: <span id="debugMatchingCount" class="font-bold text-stone-900">0</span></div>
-        <div>Active Sync Phrase: <span id="debugSyncPhrase" class="font-bold text-stone-900">-</span></div>
-        <div>Supabase Connected: <span id="debugSupabaseStatus" class="font-bold text-stone-900">No</span></div>
-        <div>Last Cloud Query Rows: <span id="debugCloudRows" class="font-bold text-stone-900">0</span></div>
+      <div id="debugPanel" class="border border-amber-200 bg-amber-50/50 p-3 rounded-lg text-[11px] font-mono space-y-1 text-stone-700">
+        <div class="font-black text-amber-700 uppercase tracking-wider text-[9px] mb-1">🛠️ Diagnostic Inspector</div>
+        <div>Total Local Entries: <span id="debugTotalLocal" class="font-bold text-stone-900">0</span></div>
+        <div>Selected Date: <span id="debugSelectedDate" class="font-bold text-stone-900">-</span></div>
+        <div>Supabase Status: <span id="debugSupabaseStatus" class="font-bold text-stone-900">Checking...</span></div>
       </div>
 
       <div id="snapshotContainer" class="hidden border border-stone-200 p-3.5 rounded-lg bg-stone-50 text-[11px] leading-relaxed">
@@ -126,7 +123,7 @@
       </div>
 
       <div class="border-t border-stone-200 pt-4">
-        <h3 class="text-[10px] font-black tracking-wider text-amber-700 uppercase mb-2">📦 Show All Entries (Database Check)</h3>
+        <h3 class="text-[10px] font-black tracking-wider text-amber-700 uppercase mb-2">📦 Show All Entries (Database Verification Check)</h3>
         <div id="allEntriesFeed" class="flex flex-col gap-2 max-h-60 overflow-y-auto text-xs space-y-1">
           </div>
       </div>
@@ -150,12 +147,11 @@
   <script>
     let appState = JSON.parse(localStorage.getItem('body_admin_data')) || { entries: [] };
     let supabaseClient = null;
-    let lastCloudRowsCount = 0;
     
     if (!appState.entries || !Array.isArray(appState.entries)) {
       appState = { entries: [] };
     }
-    
+
     document.getElementById('entryDate').value = new Date().toISOString().split('T')[0];
 
     function updatePhotoStatus() {
@@ -164,10 +160,10 @@
       const labelContainer = statusText.parentElement;
       
       if (input.files && input.files.length > 0) {
-        statusText.innerText = "📸 Photo attached (will process ephemerally)";
+        statusText.innerText = "📸 Photo attached (processed ephemerally)";
         labelContainer.className = "text-[11px] text-emerald-600 font-black flex items-center gap-1 font-mono transition-colors select-none";
       } else {
-        statusText.innerText = "Add meal photo / nutrition label";
+        statusText.innerText = "Add label/photo";
         labelContainer.className = "text-[11px] text-stone-400 hover:text-stone-700 cursor-pointer flex items-center gap-1 font-mono transition-colors select-none";
       }
     }
@@ -210,8 +206,6 @@
         document.getElementById('sbUrlInput').value = url;
         document.getElementById('sbKeyInput').value = key;
         pullDataFromCloud();
-      } else {
-        renderDashboard();
       }
     }
 
@@ -244,14 +238,10 @@
         if (error) {
           console.error("[Supabase Fetch Error Details]:", error);
           alert("Supabase fetch failed");
-          throw error;
+          return;
         }
-        
-        lastCloudRowsCount = data ? data.length : 0;
-
-        if (data && data.length > 0) {
+        if (data) {
           const localMap = new Map(appState.entries.map(e => [e.id, e]));
-          
           data.forEach(row => {
             localMap.set(row.id, {
               id: row.id,
@@ -260,19 +250,12 @@
               parsed: row.parsed_json
             });
           });
-          
           appState.entries = Array.from(localMap.values());
           localStorage.setItem('body_admin_data', JSON.stringify(appState));
           renderDashboard();
           calculateAdvancedAnalytics();
-        } else {
-          console.warn("[Sync Warning] Cloud sequence row count returned 0 entries.");
-          renderDashboard(); 
         }
-      } catch (err) { 
-        console.error("[Sync Fatal Exception Handled]:", err);
-        renderDashboard();
-      }
+      } catch (err) { console.error("[Cloud Pull Exception]:", err); }
     }
 
     function calculateAdvancedAnalytics() {
@@ -293,10 +276,9 @@
         if(txt.includes('salad') || txt.includes('broccoli') || txt.includes('vegetables') || txt.includes('spinach')) vegCount++;
 
         const parsed = entry.parsed || {};
-        const foodsList = parsed.foods || parsed.food_items || parsed.items || parsed.meals || parsed.foodLogs || [];
-        if (Array.isArray(foodsList)) {
-          foodsList.forEach(f => {
-            let name = (f.name || f.food || "").toLowerCase().trim();
+        if (parsed.foods && Array.isArray(parsed.foods)) {
+          parsed.foods.forEach(f => {
+            let name = (f.name || "").toLowerCase().trim();
             if (name) itemCounts[name] = (itemCounts[name] || 0) + 1;
           });
         }
@@ -320,19 +302,12 @@
 
     function renderDashboard() {
       const targetDate = document.getElementById('entryDate').value;
-      
-      const daysEntries = appState.entries.filter(e => {
-        if (!e.date) return false;
-        return e.date.split('T')[0] === targetDate;
-      });
+      const daysEntries = appState.entries.filter(e => e.date === targetDate);
       
       document.getElementById('debugTotalLocal').innerText = appState.entries.length;
-      document.getElementById('debugSelectedDate').innerText = targetDate || "None Set";
-      document.getElementById('debugMatchingCount').innerText = daysEntries.length;
-      document.getElementById('debugSyncPhrase').innerText = localStorage.getItem('sync_phrase') || "None Set";
-      document.getElementById('debugSupabaseStatus').innerText = supabaseClient ? "Yes (Connected)" : "No";
-      document.getElementById('debugCloudRows').innerText = lastCloudRowsCount;
-      
+      document.getElementById('debugSelectedDate').innerText = targetDate;
+      document.getElementById('debugSupabaseStatus').innerText = supabaseClient ? "Connected" : "Not configured";
+
       let cal = 0;
       let prot = 0;
       let burn = 0;
@@ -345,53 +320,41 @@
       } else {
         daysEntries.forEach(entry => {
           const parsed = entry.parsed || {};
-          console.log("Parsed entry:", parsed);
-          
           let itemListHtml = '';
-          const foodsList = parsed.foods || parsed.food_items || parsed.items || parsed.meals || parsed.foodLogs;
           
-          if (Array.isArray(foodsList) && foodsList.length > 0) {
-            itemListHtml = foodsList.map(f => {
-              const foodName = f.name || f.food || "Logged Item";
+          if (parsed.foods && Array.isArray(parsed.foods) && parsed.foods.length > 0) {
+            itemListHtml = parsed.foods.map(f => {
               cal += Number(f.calories || 0);
               prot += Number(f.protein || 0);
               const foodConfidence = f.confidence || parsed.confidence_rating || 'Medium';
-              return `<li class="text-stone-700">✨ ${foodName} <span class="text-[10px] text-stone-400">(${f.calories || 0} kcal, ${f.protein || 0}g, ${foodConfidence})</span></li>`;
+              return `<li class="text-stone-700">✨ ${f.name} <span class="text-[10px] text-stone-400">(${f.calories || 0} kcal, ${f.protein || 0}g, ${foodConfidence})</span></li>`;
             }).join('');
           } else if (parsed.confidence_rating === "Unparsed") {
-            itemListHtml = `<li class="text-amber-700 font-bold italic">📦 Saved raw entry. (AI context generation failed, but description preserved)</li>`;
+            itemListHtml = `<li class="text-amber-700 font-bold italic">📦 Saved raw entry. (AI parsing failed; raw entry saved only.)</li>`;
           } else {
-            itemListHtml = `<li class="text-amber-600 italic">⚠️ Entry saved, but structured food data was not recognized.</li>`;
+            itemListHtml = `<li class="text-amber-600 italic">⚠️ Entry saved; text was not structured into itemized components.</li>`;
           }
           
-          const exerciseList = parsed.exercises || parsed.exercise_logs || parsed.activities || parsed.workouts;
-          if (Array.isArray(exerciseList)) {
-            exerciseList.forEach(e => {
-              burn += Number(e.caloriesBurned || e.calories || e.burned || 0);
+          if (parsed.exercises && Array.isArray(parsed.exercises)) {
+            parsed.exercises.forEach(e => {
+              burn += Number(e.caloriesBurned || e.calories || 0);
             });
           }
 
           feedEl.innerHTML += `
             <div class="border border-stone-200 p-3 bg-white rounded shadow-2xs text-xs space-y-2">
               <div class="font-sans italic text-stone-900 bg-stone-50 p-2 rounded border-l-2 border-stone-300">
-                "${entry.rawText || "No conversational description written."}"
+                "${entry.rawText || "No description written."}"
               </div>
               <ul class="list-none space-y-1 pl-1">${itemListHtml}</ul>
             </div>
           `;
         });
 
+        // Use custom rounding rule to avoid float representation bugs like 26.19999999g
         cal = Math.round(cal);
-        prot = Math.round(prot);
+        prot = Math.round(prot * 10) / 10;
         burn = Math.round(burn);
-
-        if (cal < 1100 && cal > 0) {
-           feedEl.innerHTML += `
-             <div class="mt-2 text-[10px] bg-amber-50 text-amber-800 border border-amber-200 rounded p-2 leading-normal">
-               ⚠️ **Uncertainty Note:** Estimated totals look unusually low for an active day profile. This suggests logs might be incomplete or specified metrics lack explicit packaging gram volumes.
-             </div>
-           `;
-        }
       }
 
       document.getElementById('totalCal').innerText = cal;
@@ -406,25 +369,21 @@
           return `
             <div class="p-2 border border-stone-200 bg-stone-50 rounded space-y-1">
               <div class="flex justify-between font-bold text-[9px] text-stone-400 uppercase">
-                <span>#${index + 1} | Date key: "${e.date}"</span>
-                <span class="text-amber-700 font-mono">ID: ${e.id ? e.id.substring(0,8) : '???'}</span>
+                <span>#${index + 1} | Date: "${e.date}"</span>
+                <span class="text-amber-700">Status: ${e.parsed?.confidence_rating || 'Parsed'}</span>
               </div>
-              <div class="font-sans font-medium text-stone-800 text-xs">"${e.rawText}"</div>
+              <div class="font-sans text-stone-800 text-xs">"${e.rawText}"</div>
             </div>
           `;
         }).join('');
       }
     }
 
-    // Helper to read local file safely into Base64 for Ephemeral AI Multi-modal transfers
     function convertFileToBase64(file) {
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.readAsDataURL(file);
-        reader.onload = () => {
-          const base64String = reader.result.split(',')[1];
-          resolve({ mimeType: file.type, base64Data: base64String });
-        };
+        reader.onload = () => resolve({ mimeType: file.type, base64Data: reader.result.split(',')[1] });
         reader.onerror = error => reject(error);
       });
     }
@@ -447,6 +406,7 @@
       btn.disabled = true;
       btn.innerText = "SAVING...";
 
+      // 1. GENERATE LOCAL ROW INSTANTLY TO SHIELD RAW DATA FROM DROP-OUTS
       const localItem = {
         id: crypto.randomUUID(),
         date: dateEl.value,
@@ -460,46 +420,36 @@
       };
 
       try {
-        let parsedContent = null;
         let apiParts = [];
 
-        // Check if an ephemeral photo payload exists
+        // Attach image data cleanly if selected
         if (photoIn.files && photoIn.files.length > 0) {
           try {
-            const photoMetadata = await convertFileToBase64(photoIn.files[0]);
+            const mediaData = await convertFileToBase64(photoIn.files[0]);
             apiParts.push({
-              inlineData: {
-                mimeType: photoMetadata.mimeType,
-                data: photoMetadata.base64Data
-              }
+              inlineData: { mimeType: mediaData.mimeType, data: mediaData.base64Data }
             });
           } catch (fileErr) {
-            console.error("[Ephemeral Image Extraction Fault]:", fileErr);
+            console.error("[Local Media Conversion Error]:", fileErr);
           }
         }
 
-        // Add the primary algorithmic prompt structure text part
         apiParts.push({
-          text: `Parse this conversational log and any accompanying meal/label image into structured JSON format following strict realism and uncertainty constraints.
-          
-          Rules:
-          1. Use the image to identify ingredients, portion sizes, or exact nutrition label stats if provided.
-          2. Never assume exact quantities when user description or image context is vague.
-          3. Include a top-level "confidence_rating": "High" (explicit labels/grams visible), "Medium" (standard recognizable item/portion), or "Low" (vague descriptions or unclear visuals).
-          4. Focus on realistic estimates against standard baselines, not hyper-inflated bodybuilding targets. Keep text data neutral.
+          text: `Parse this conversational log and any accompanying nutrition label image into structured JSON format. Follow strict realism. Return raw JSON mapping. Do not wrap in markdown code fenceblocks.
 
-          JSON Template Structure:
+          JSON Target Format:
           {
             "confidence_rating": "High/Medium/Low",
-            "confidence_reason": "string detailing visual assumptions or portion uncertainty if any",
-            "foods": [{ "name": "Clean name", "calories": 0, "protein": 0, "confidence": "High/Medium/Low" }],
-            "exercises": [{ "activity": "boxing/etc", "caloriesBurned": 0 }],
-            "nudge": "Short dynamic tracking calibration observation under 12 words"
+            "confidence_reason": "string description",
+            "foods": [{ "name": "Clean item name", "calories": 0, "protein": 0, "confidence": "High/Medium/Low" }],
+            "exercises": [{ "activity": "string", "caloriesBurned": 0 }],
+            "nudge": "Observation snippet under 12 words"
           }
 
-          Text context prompt inputs: "${text}"`
+          Text prompt: "${text}"`
         });
 
+        // 2. FETCH PIPELINE TARGET WITH DETAILED ALERTS
         try {
           const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
             method: 'POST',
@@ -510,45 +460,51 @@
             })
           });
 
-          if (!response.ok) throw new Error("Gemini API failed");
+          if (!response.ok) {
+            throw new Error("Gemini API failed");
+          }
 
           const resData = await response.json();
           const jsonText = resData.candidates[0].content.parts[0].text;
           
           try {
-            parsedContent = JSON.parse(jsonText);
-            localItem.parsed = parsedContent;
+            localItem.parsed = JSON.parse(jsonText);
           } catch (jsonErr) {
-            console.error("[JSON Parsing Fault]:", jsonText, jsonErr);
+            console.error("[Invalid Response String Content]:", jsonText, jsonErr);
             alert("Gemini returned invalid JSON");
           }
 
         } catch (apiErr) {
-          console.error("[Gemini Connection Fault Details]:", apiErr);
+          console.error("[Gemini Fetch Error Logs]:", apiErr);
           alert("Gemini API failed");
         }
 
-        // Local and Cloud persistence routines
+        // 3. STORAGE SYNC SEQUENCE (ALWAYS HAPPENS ANYWAY)
         appState.entries.push(localItem);
         localStorage.setItem('body_admin_data', JSON.stringify(appState));
         
         if (supabaseClient) {
-          const sbResponse = await supabaseClient.from('sync_entries').insert({
-            id: localItem.id,
-            sync_key: syncKey,
-            entry_date: localItem.date,
-            raw_text: localItem.rawText,
-            parsed_json: localItem.parsed
-          }).select();
+          try {
+            const sbResponse = await supabaseClient.from('sync_entries').insert({
+              id: localItem.id,
+              sync_key: syncKey,
+              entry_date: localItem.date,
+              raw_text: localItem.rawText,
+              parsed_json: localItem.parsed
+            }).select();
 
-          console.log("[Supabase Server Insert Response Payload]:", sbResponse);
-          if (sbResponse.error) {
-            console.error("[Supabase Write Exception Summary]:", sbResponse.error);
+            console.log("[Supabase Sync Response Payload]:", sbResponse);
+            if (sbResponse.error) {
+              console.error("[Supabase Write Error Details]:", sbResponse.error);
+              alert("Supabase insert failed");
+            }
+          } catch (sbEx) {
+            console.error("[Supabase Transport Blocked]:", sbEx);
             alert("Supabase insert failed");
           }
         }
 
-        // Clean interface inputs completely
+        // Wipe text controls out cleanly
         txtEl.value = '';
         photoIn.value = '';
         updatePhotoStatus();
@@ -560,14 +516,14 @@
         renderDashboard();
         calculateAdvancedAnalytics();
 
-        if (localItem.parsed && localItem.parsed.confidence_rating === "Unparsed") {
-          alert("Saved raw entry (AI pipeline generated an exception).");
+        if (localItem.parsed?.confidence_rating === "Unparsed") {
+          alert("Saved raw entry");
         } else {
           alert("Entry successfully recorded.");
         }
 
       } catch (fatalErr) {
-        console.error("[Pipeline Intercepted Failure]:", fatalErr);
+        console.error("[Fatal Ingestion Failure Intercepted]:", fatalErr);
       } finally {
         btn.disabled = false;
         btn.innerText = "LOG ENTRY";
@@ -577,7 +533,6 @@
     document.getElementById('entryDate').addEventListener('change', renderDashboard);
     checkApiKey();
     initSupabase();
-    calculateAdvancedAnalytics();
     renderDashboard();
   </script>
 </body>
