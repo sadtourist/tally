@@ -11,7 +11,7 @@
 </head>
 <body class="bg-white text-stone-900 font-mono antialiased">
 
-<div class="max-w-md mx-auto min-h-screen p-4 flex flex-col">
+<div class="max-w-md mx-auto min-h-screen p-4 pb-24 flex flex-col">
 
   <header class="flex justify-between items-center mb-6 pt-2 border-b border-stone-200 pb-3">
     <h1 class="text-md font-black tracking-tighter">TALLY</h1>
@@ -32,55 +32,113 @@
       <input type="password" id="sbKey" class="w-full p-2 border border-stone-300 rounded text-xs">
     </div>
     <button onclick="saveSettings()" class="w-full bg-stone-900 text-white font-bold py-2 rounded text-[10px] uppercase tracking-wider">Save</button>
-    <p class="text-stone-400 text-[10px] leading-relaxed">Use the exact same three values on every device — that's what makes entries show up everywhere.</p>
+    <p class="text-stone-400 text-[10px] leading-relaxed">Use the exact same three values on every device.</p>
   </div>
 
   <div id="banner" class="hidden mb-4 p-3 rounded text-xs leading-relaxed"></div>
 
-  <form onsubmit="addEntry(event)" class="flex flex-col gap-3 mb-6">
-    <textarea id="rawText" rows="4" required placeholder="Type what you ate or did... e.g. Skyr with raspberries, 30 min run"
-      class="w-full p-3 border border-stone-200 rounded-lg text-sm font-sans focus:outline-none focus:border-stone-900 resize-none"></textarea>
-    <button type="submit" id="submitBtn" class="bg-stone-900 text-white font-bold text-xs px-6 py-2.5 rounded uppercase tracking-wider">Add Entry</button>
-  </form>
+  <!-- LOG TAB -->
+  <div id="view-log" class="flex flex-col gap-4">
+    <form onsubmit="addEntry(event)" class="flex flex-col gap-3">
+      <div class="flex justify-between items-center">
+        <span class="text-[10px] font-bold tracking-wider text-stone-400 uppercase">New Entry</span>
+        <input type="date" id="entryDate" class="text-xs border border-stone-200 rounded px-2 py-0.5 bg-stone-50">
+      </div>
+      <textarea id="rawText" rows="4" placeholder="Type what you ate or did... e.g. Skyr with raspberries, 30 min run"
+        class="w-full p-3 border border-stone-200 rounded-lg text-sm font-sans focus:outline-none focus:border-stone-900 resize-none"></textarea>
 
-  <div class="grid grid-cols-3 gap-2 text-center mb-6">
-    <div class="border border-stone-200 p-2.5 rounded">
-      <div class="text-[9px] text-stone-400 uppercase">Calories</div>
-      <div class="text-md font-black"><span id="totalCal">0</span></div>
+      <label class="flex items-center justify-between text-[11px] text-stone-400 cursor-pointer">
+        <span id="photoLabel">📷 Attach a photo of the meal (optional)</span>
+        <input type="file" id="photoInput" accept="image/*" class="hidden" onchange="onPhotoChange()">
+      </label>
+      <img id="photoPreview" class="hidden w-full max-h-48 object-cover rounded-lg border border-stone-200">
+
+      <button type="submit" id="submitBtn" class="bg-stone-900 text-white font-bold text-xs px-6 py-2.5 rounded uppercase tracking-wider">Add Entry</button>
+    </form>
+  </div>
+
+  <!-- TRENDS TAB -->
+  <div id="view-trends" class="hidden flex flex-col gap-6">
+
+    <div>
+      <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">Today</h3>
+      <div class="grid grid-cols-3 gap-2 text-center">
+        <div class="border border-stone-200 p-2.5 rounded">
+          <div class="text-[9px] text-stone-400 uppercase">Calories</div>
+          <div class="text-md font-black"><span id="todayCal">0</span></div>
+        </div>
+        <div class="border border-stone-200 p-2.5 rounded">
+          <div class="text-[9px] text-stone-400 uppercase">Protein</div>
+          <div class="text-md font-black"><span id="todayProtein">0</span>g</div>
+        </div>
+        <div class="border border-stone-200 p-2.5 rounded">
+          <div class="text-[9px] text-stone-400 uppercase">Burned</div>
+          <div class="text-md font-black"><span id="todayBurned">0</span></div>
+        </div>
+      </div>
     </div>
-    <div class="border border-stone-200 p-2.5 rounded">
-      <div class="text-[9px] text-stone-400 uppercase">Protein</div>
-      <div class="text-md font-black"><span id="totalProtein">0</span>g</div>
+
+    <div>
+      <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">Last 7 Days</h3>
+      <div id="weekChart" class="flex flex-col gap-1.5"></div>
+      <div class="text-[10px] text-stone-400 mt-2">Avg: <span id="weekAvgCal">0</span> kcal/day · <span id="weekAvgProtein">0</span>g protein/day</div>
     </div>
-    <div class="border border-stone-200 p-2.5 rounded">
-      <div class="text-[9px] text-stone-400 uppercase">Burned</div>
-      <div class="text-md font-black"><span id="totalBurned">0</span></div>
+
+    <div>
+      <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">This Month</h3>
+      <div class="text-xs text-stone-600 leading-relaxed">
+        <span id="monthDaysLogged">0</span> days logged · avg <span id="monthAvgCal">0</span> kcal/day, <span id="monthAvgProtein">0</span>g protein/day
+      </div>
+    </div>
+
+    <div>
+      <div class="flex justify-between items-center mb-2">
+        <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase">Patterns</h3>
+        <button onclick="generateInsights()" id="insightsBtn" class="text-[10px] uppercase tracking-wider bg-stone-900 text-white px-3 py-1.5 rounded">Analyze</button>
+      </div>
+      <div id="insightsBox" class="border border-stone-200 rounded-lg p-3 text-xs bg-stone-50 leading-relaxed text-stone-600">
+        Tap "Analyze" to look for patterns in your recent logs.
+      </div>
+    </div>
+
+    <div>
+      <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">Entries</h3>
+      <div id="feed" class="flex flex-col gap-2">
+        <p class="text-xs text-stone-300 italic text-center py-6">No entries yet.</p>
+      </div>
     </div>
   </div>
 
-  <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">Entries</h3>
-  <div id="feed" class="flex flex-col gap-2 pb-10">
-    <p class="text-xs text-stone-300 italic text-center py-6">No entries yet.</p>
-  </div>
-
+  <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-stone-200 py-3 px-6 max-w-md mx-auto flex justify-around items-center">
+    <button onclick="switchView('log')" id="nav-log" class="font-black text-xs uppercase tracking-widest border-b-2 pb-0.5 text-stone-900 border-stone-900">Log</button>
+    <button onclick="switchView('trends')" id="nav-trends" class="font-bold text-xs uppercase tracking-widest border-b-2 pb-0.5 text-stone-400 border-transparent">Trends</button>
+  </nav>
 </div>
 
 <script>
   let supabaseClient = null;
   let entries = [];
+  let pendingPhoto = null; // { base64, mimeType }
 
   function todayStr() { return new Date().toISOString().split('T')[0]; }
 
   function showBanner(msg, kind) {
     const b = document.getElementById('banner');
     b.classList.remove('hidden', 'bg-red-50', 'text-red-700', 'border', 'border-red-200', 'bg-amber-50', 'text-amber-700', 'border-amber-200');
-    if (kind === 'error') b.classList.add('bg-red-50', 'text-red-700', 'border', 'border-red-200');
-    else b.classList.add('bg-amber-50', 'text-amber-700', 'border', 'border-amber-200');
+    b.classList.add(...(kind === 'error' ? ['bg-red-50', 'text-red-700', 'border', 'border-red-200'] : ['bg-amber-50', 'text-amber-700', 'border', 'border-amber-200']));
     b.innerText = msg;
   }
   function clearBanner() { document.getElementById('banner').classList.add('hidden'); }
 
   function toggleSettings() { document.getElementById('settings').classList.toggle('hidden'); }
+
+  function switchView(target) {
+    document.getElementById('view-log').classList.toggle('hidden', target !== 'log');
+    document.getElementById('view-trends').classList.toggle('hidden', target !== 'trends');
+    document.getElementById('nav-log').className = 'font-black text-xs uppercase tracking-widest border-b-2 pb-0.5 ' + (target === 'log' ? 'text-stone-900 border-stone-900' : 'text-stone-400 border-transparent');
+    document.getElementById('nav-trends').className = 'font-bold text-xs uppercase tracking-widest border-b-2 pb-0.5 ' + (target === 'trends' ? 'text-stone-900 border-stone-900' : 'text-stone-400 border-transparent');
+    if (target === 'trends') render();
+  }
 
   function loadSettingsIntoForm() {
     document.getElementById('geminiKey').value = localStorage.getItem('gemini_key') || '';
@@ -116,84 +174,110 @@
     const { data, error } = await supabaseClient
       .from('entries')
       .select('*')
+      .order('entry_date', { ascending: false })
       .order('created_at', { ascending: false });
 
-    if (error) {
-      showBanner('Could not load entries: ' + error.message, 'error');
-      return;
-    }
+    if (error) { showBanner('Could not load entries: ' + error.message, 'error'); return; }
     clearBanner();
     entries = data || [];
     render();
   }
 
-  async function callGemini(text) {
+  function onPhotoChange() {
+    const input = document.getElementById('photoInput');
+    const label = document.getElementById('photoLabel');
+    const preview = document.getElementById('photoPreview');
+    const file = input.files[0];
+    if (!file) { pendingPhoto = null; preview.classList.add('hidden'); label.innerText = '📷 Attach a photo of the meal (optional)'; return; }
+
+    label.innerText = '📷 ' + file.name;
+    preview.src = URL.createObjectURL(file);
+    preview.classList.remove('hidden');
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      pendingPhoto = { base64: reader.result.split(',')[1], mimeType: file.type };
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function clearPhoto() {
+    pendingPhoto = null;
+    document.getElementById('photoInput').value = '';
+    document.getElementById('photoPreview').classList.add('hidden');
+    document.getElementById('photoLabel').innerText = '📷 Attach a photo of the meal (optional)';
+  }
+
+  async function callGemini(text, photo) {
     const apiKey = localStorage.getItem('gemini_key');
-    const prompt = `Parse this food/activity log into JSON. Be realistic, don't overestimate.
+    const promptText = `Parse this food/activity log into JSON.
+
+Rules:
+- If exact amounts aren't given, estimate generously on the higher side for calories and portion sizes rather than underestimating — the user is tracking to lose weight and prefers to overcount intake when unsure.
+- If a photo is attached, identify the food and estimate realistic portion sizes from it, combined with any text given.
+- Keep the summary short and plain.
+
 Return ONLY this JSON shape, no other text:
 {"summary": "short clean one-line description", "calories": 0, "protein": 0, "exercise_calories": 0}
 
-Log: "${text}"`;
+Text log: "${text || '(none — see photo)'}"`;
+
+    const parts = [{ text: promptText }];
+    if (photo) parts.push({ inlineData: { mimeType: photo.mimeType, data: photo.base64 } });
 
     const body = JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
+      contents: [{ parts }],
       generationConfig: { responseMimeType: "application/json" }
     });
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-
     let response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
 
     if (!response.ok && response.status === 503) {
       await new Promise(r => setTimeout(r, 1500));
       response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
     }
-
     if (!response.ok) {
       const errBody = await response.text();
       throw new Error(`Gemini error (HTTP ${response.status}): ${errBody.slice(0, 200)}`);
     }
-
     const data = await response.json();
-    const jsonText = data.candidates[0].content.parts[0].text;
-    return JSON.parse(jsonText);
+    return JSON.parse(data.candidates[0].content.parts[0].text);
   }
 
   async function addEntry(e) {
     e.preventDefault();
     clearBanner();
     const txtEl = document.getElementById('rawText');
+    const dateEl = document.getElementById('entryDate');
     const btn = document.getElementById('submitBtn');
     const text = txtEl.value.trim();
-    if (!text) return;
 
-    if (!localStorage.getItem('gemini_key')) {
-      showBanner('Add your Gemini API key in Settings first.', 'error');
-      return;
-    }
-    if (!supabaseClient) {
-      showBanner('Add your Supabase URL + key in Settings first.', 'error');
-      return;
-    }
+    if (!text && !pendingPhoto) { showBanner('Type something or attach a photo first.', 'error'); return; }
+    if (!localStorage.getItem('gemini_key')) { showBanner('Add your Gemini API key in Settings first.', 'error'); return; }
+    if (!supabaseClient) { showBanner('Add your Supabase URL + key in Settings first.', 'error'); return; }
 
     btn.disabled = true;
     btn.innerText = 'SAVING...';
 
     try {
-      const parsed = await callGemini(text);
+      const parsed = await callGemini(text, pendingPhoto);
 
       const { error } = await supabaseClient.from('entries').insert({
-        raw_text: text,
+        entry_date: dateEl.value || todayStr(),
+        raw_text: text || '(photo only)',
         summary: parsed.summary || text,
         calories: Number(parsed.calories) || 0,
         protein: Number(parsed.protein) || 0,
         exercise_calories: Number(parsed.exercise_calories) || 0
       });
-
       if (error) throw new Error('Supabase insert failed: ' + error.message);
 
       txtEl.value = '';
+      clearPhoto();
+      dateEl.value = todayStr();
       await fetchEntries();
+      showBanner('Saved: ' + (parsed.summary || text), 'warn');
 
     } catch (err) {
       showBanner(err.message, 'error');
@@ -210,28 +294,56 @@ Log: "${text}"`;
     await fetchEntries();
   }
 
+  function dateNDaysAgo(n) {
+    const d = new Date();
+    d.setDate(d.getDate() - n);
+    return d.toISOString().split('T')[0];
+  }
+
   function render() {
     const today = todayStr();
-    const todays = entries.filter(e => (e.created_at || '').split('T')[0] === today);
 
-    const cal = todays.reduce((s, e) => s + (e.calories || 0), 0);
-    const prot = todays.reduce((s, e) => s + (e.protein || 0), 0);
-    const burn = todays.reduce((s, e) => s + (e.exercise_calories || 0), 0);
+    // Today's totals
+    const todays = entries.filter(e => e.entry_date === today);
+    document.getElementById('todayCal').innerText = todays.reduce((s, e) => s + (e.calories || 0), 0);
+    document.getElementById('todayProtein').innerText = todays.reduce((s, e) => s + (e.protein || 0), 0);
+    document.getElementById('todayBurned').innerText = todays.reduce((s, e) => s + (e.exercise_calories || 0), 0);
 
-    document.getElementById('totalCal').innerText = cal;
-    document.getElementById('totalProtein').innerText = prot;
-    document.getElementById('totalBurned').innerText = burn;
+    // Last 7 days chart
+    const days = Array.from({ length: 7 }, (_, i) => dateNDaysAgo(6 - i));
+    const dayTotals = days.map(d => entries.filter(e => e.entry_date === d).reduce((s, e) => s + (e.calories || 0), 0));
+    const maxCal = Math.max(...dayTotals, 1);
+    document.getElementById('weekChart').innerHTML = days.map((d, i) => {
+      const label = new Date(d).toLocaleDateString(undefined, { weekday: 'short' });
+      const pct = Math.round((dayTotals[i] / maxCal) * 100);
+      return `
+        <div class="flex items-center gap-2 text-[10px]">
+          <span class="w-8 text-stone-400">${label}</span>
+          <div class="flex-1 bg-stone-100 rounded h-3 overflow-hidden"><div class="bg-stone-800 h-3" style="width:${pct}%"></div></div>
+          <span class="w-10 text-right text-stone-500">${dayTotals[i]}</span>
+        </div>`;
+    }).join('');
+    const loggedDays = dayTotals.filter(c => c > 0).length || 1;
+    document.getElementById('weekAvgCal').innerText = Math.round(dayTotals.reduce((a, b) => a + b, 0) / loggedDays);
+    const weekProtein = days.map(d => entries.filter(e => e.entry_date === d).reduce((s, e) => s + (e.protein || 0), 0));
+    document.getElementById('weekAvgProtein').innerText = Math.round(weekProtein.reduce((a, b) => a + b, 0) / loggedDays);
 
+    // This month
+    const monthPrefix = today.slice(0, 7);
+    const monthEntries = entries.filter(e => (e.entry_date || '').startsWith(monthPrefix));
+    const monthDays = new Set(monthEntries.map(e => e.entry_date)).size || 1;
+    document.getElementById('monthDaysLogged').innerText = new Set(monthEntries.map(e => e.entry_date)).size;
+    document.getElementById('monthAvgCal').innerText = Math.round(monthEntries.reduce((s, e) => s + (e.calories || 0), 0) / monthDays);
+    document.getElementById('monthAvgProtein').innerText = Math.round(monthEntries.reduce((s, e) => s + (e.protein || 0), 0) / monthDays);
+
+    // Feed
     const feed = document.getElementById('feed');
     if (entries.length === 0) {
       feed.innerHTML = '<p class="text-xs text-stone-300 italic text-center py-6">No entries yet.</p>';
       return;
     }
-
     feed.innerHTML = entries.map(e => {
-      const date = new Date(e.created_at);
-      const dateLabel = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-      const timeLabel = date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+      const dateLabel = new Date(e.entry_date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
       return `
         <div class="border border-stone-200 p-3 rounded text-xs space-y-1.5">
           <div class="flex justify-between items-start gap-2">
@@ -239,14 +351,50 @@ Log: "${text}"`;
             <button onclick="deleteEntry('${e.id}')" class="text-stone-300 hover:text-red-500 text-[10px] shrink-0">✕</button>
           </div>
           <div class="flex justify-between text-[10px] text-stone-400">
-            <span>${dateLabel} · ${timeLabel}</span>
+            <span>${dateLabel}</span>
             <span>${e.calories || 0} kcal · ${e.protein || 0}g protein${e.exercise_calories ? ' · ' + e.exercise_calories + ' burned' : ''}</span>
           </div>
-        </div>
-      `;
+        </div>`;
     }).join('');
   }
 
+  async function generateInsights() {
+    const box = document.getElementById('insightsBox');
+    const btn = document.getElementById('insightsBtn');
+    if (!localStorage.getItem('gemini_key')) { box.innerText = 'Add your Gemini API key in Settings first.'; return; }
+
+    const cutoff = dateNDaysAgo(30);
+    const recent = entries.filter(e => e.entry_date >= cutoff)
+      .map(e => ({ date: e.entry_date, summary: e.summary, calories: e.calories, protein: e.protein, exercise_calories: e.exercise_calories }));
+
+    if (recent.length < 3) { box.innerText = 'Log a few more days before patterns become meaningful.'; return; }
+
+    btn.disabled = true;
+    btn.innerText = 'ANALYZING...';
+    try {
+      const apiKey = localStorage.getItem('gemini_key');
+      const prompt = `Here are someone's last 30 days of food/exercise logs as JSON: ${JSON.stringify(recent)}.
+Find 2-4 real, specific behavioral patterns or correlations (e.g. low protein after exercise days, rising frequency of a particular food/drink, weekday vs weekend differences). Be direct and practical, like a friend pointing something out — not clinical, not vague. If nothing meaningful stands out, say so plainly instead of inventing patterns.
+Return ONLY a JSON array of short strings, each under 15 words, no other text.`;
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      const res = await fetch(url, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } })
+      });
+      if (!res.ok) throw new Error(`Gemini error (HTTP ${res.status})`);
+      const data = await res.json();
+      const insights = JSON.parse(data.candidates[0].content.parts[0].text);
+      box.innerHTML = '<ul class="list-disc pl-4 space-y-1.5">' + insights.map(i => `<li>${i}</li>`).join('') + '</ul>';
+    } catch (err) {
+      box.innerText = 'Could not generate insights: ' + err.message;
+    } finally {
+      btn.disabled = false;
+      btn.innerText = 'ANALYZE';
+    }
+  }
+
+  document.getElementById('entryDate').value = todayStr();
   loadSettingsIntoForm();
   initSupabase();
 </script>
