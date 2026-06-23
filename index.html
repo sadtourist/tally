@@ -67,6 +67,16 @@
 
     <div id="view-dashboard" class="hidden flex flex-col gap-6">
       
+      <div id="debugPanel" class="border border-red-200 bg-red-50/50 p-3 rounded-lg text-[11px] font-mono space-y-1 text-stone-700">
+        <div class="font-black text-red-700 uppercase tracking-wider text-[9px] mb-1">🛠️ Diagnostic Inspector</div>
+        <div>Total Local Entries (`appState`): <span id="debugTotalLocal" class="font-bold text-stone-900">0</span></div>
+        <div>Selected Dashboard Date: <span id="debugSelectedDate" class="font-bold text-stone-900">-</span></div>
+        <div>Matching Current Date: <span id="debugMatchingCount" class="font-bold text-stone-900">0</span></div>
+        <div>Active Sync Phrase: <span id="debugSyncPhrase" class="font-bold text-stone-900">-</span></div>
+        <div>Supabase Connected: <span id="debugSupabaseStatus" class="font-bold text-stone-900">No</span></div>
+        <div>Last Cloud Query Rows: <span id="debugCloudRows" class="font-bold text-stone-900">0</span></div>
+      </div>
+
       <div id="snapshotContainer" class="hidden border border-stone-200 p-3.5 rounded-lg bg-stone-50 text-[11px] leading-relaxed">
         <div class="font-bold uppercase tracking-wider text-stone-400 mb-2 text-[9px]">Last 30 Days Context</div>
         <div class="grid grid-cols-2 gap-3 text-stone-700">
@@ -115,6 +125,12 @@
           </div>
       </div>
 
+      <div class="border-t border-stone-200 pt-4">
+        <h3 class="text-[10px] font-black tracking-wider text-amber-700 uppercase mb-2">📦 Show All Entries (Database Check)</h3>
+        <div id="allEntriesFeed" class="flex flex-col gap-2 max-h-60 overflow-y-auto text-xs space-y-1">
+          </div>
+      </div>
+
       <div class="border border-stone-100 bg-stone-50 rounded-lg p-3 text-[10px] text-stone-400 leading-normal mt-4">
         <span class="font-bold text-stone-500 uppercase tracking-wide text-[9px] block mb-0.5">Healthy Baseline Ranges</span>
         * **Healthy Minimum Range:** ~1,500–1,800 kcal/day | ~50–65g protein<br>
@@ -134,8 +150,8 @@
   <script>
     let appState = JSON.parse(localStorage.getItem('body_admin_data')) || { entries: [] };
     let supabaseClient = null;
+    let lastCloudRowsCount = 0;
     
-    // Safety check for old appState definitions
     if (!appState.entries || !Array.isArray(appState.entries)) {
       appState = { entries: [] };
     }
@@ -195,6 +211,8 @@
         document.getElementById('sbUrlInput').value = url;
         document.getElementById('sbKeyInput').value = key;
         pullDataFromCloud();
+      } else {
+        renderDashboard(); // render diagnostics even if offline
       }
     }
 
@@ -226,13 +244,11 @@
         const { data, error } = await supabaseClient.from('sync_entries').select('*').eq('sync_key', syncKey);
         if (error) throw error;
         
-        const localCountBefore = appState.entries.length;
-        const cloudCount = data ? data.length : 0;
-        
-        console.log(`[Sync Debug] Local entries: ${localCountBefore} | Cloud entries fetched: ${cloudCount} | Active phrase: "${syncKey}"`);
+        lastCloudRowsCount = data ? data.length : 0;
+        console.log(`[Sync Debug] Local entries count: ${appState.entries.length} | Cloud entries fetched: ${lastCloudRowsCount} | Sync phrase: "${syncKey}"`);
 
         if (data && data.length > 0) {
-          // Merge by unique ID rather than overwriting the state array cleanly
+          // Merge safely by unique key signature
           const localMap = new Map(appState.entries.map(e => [e.id, e]));
           
           data.forEach(row => {
@@ -248,9 +264,13 @@
           localStorage.setItem('body_admin_data', JSON.stringify(appState));
           renderDashboard();
           calculateAdvancedAnalytics();
+        } else {
+          console.warn("[Sync Warning] Supabase query returned 0 rows. Local data safe; preserving localStorage entries untouched.");
+          renderDashboard(); 
         }
       } catch (err) { 
-        console.error("[Sync Error]", err); 
+        console.error("[Sync Error]", err);
+        renderDashboard();
       }
     }
 
@@ -272,7 +292,6 @@
         if(txt.includes('salad') || txt.includes('broccoli') || txt.includes('vegetables') || txt.includes('spinach')) vegCount++;
 
         const parsed = entry.parsed || {};
-        // Use multi-key lookup fallback strategy
         const foodsList = parsed.foods || parsed.food_items || parsed.items || parsed.meals || parsed.foodLogs || [];
         if (Array.isArray(foodsList)) {
           foodsList.forEach(f => {
@@ -301,11 +320,18 @@
     function renderDashboard() {
       const targetDate = document.getElementById('entryDate').value;
       
-      // Handle timestamp slicing normalization securely
       const daysEntries = appState.entries.filter(e => {
         if (!e.date) return false;
         return e.date.split('T')[0] === targetDate;
       });
+      
+      // Update Diagnostic Inspector variables immediately
+      document.getElementById('debugTotalLocal').innerText = appState.entries.length;
+      document.getElementById('debugSelectedDate').innerText = targetDate || "None Set";
+      document.getElementById('debugMatchingCount').innerText = daysEntries.length;
+      document.getElementById('debugSyncPhrase').innerText = localStorage.getItem('sync_phrase') || "None Set";
+      document.getElementById('debugSupabaseStatus').innerText = supabaseClient ? "Yes (Connected)" : "No";
+      document.getElementById('debugCloudRows').innerText = lastCloudRowsCount;
       
       let cal = 0;
       let prot = 0;
@@ -322,18 +348,13 @@
           console.log("Parsed entry:", parsed);
           
           let itemListHtml = '';
-          let foundFood = false;
-
-          // Robust check for various alternative schema array assignments
           const foodsList = parsed.foods || parsed.food_items || parsed.items || parsed.meals || parsed.foodLogs;
           
           if (Array.isArray(foodsList) && foodsList.length > 0) {
-            foundFood = true;
             itemListHtml = foodsList.map(f => {
               const foodName = f.name || f.food || "Logged Item";
               cal += Number(f.calories || 0);
               prot += Number(f.protein || 0);
-              
               const foodConfidence = f.confidence || parsed.confidence_rating || 'Medium';
               return `<li class="text-stone-700">✨ ${foodName} <span class="text-[10px] text-stone-400">(${f.calories || 0} kcal, ${f.protein || 0}g, ${foodConfidence})</span></li>`;
             }).join('');
@@ -341,7 +362,6 @@
             itemListHtml = `<li class="text-amber-600 italic">⚠️ Entry saved, but structured food data was not recognized.</li>`;
           }
           
-          // Exercise schema matching alternatives block
           const exerciseList = parsed.exercises || parsed.exercise_logs || parsed.activities || parsed.workouts;
           if (Array.isArray(exerciseList)) {
             exerciseList.forEach(e => {
@@ -349,7 +369,6 @@
             });
           }
 
-          // Append timeline block displaying the foundational text entry first
           feedEl.innerHTML += `
             <div class="border border-stone-200 p-3 bg-white rounded shadow-2xs text-xs space-y-2">
               <div class="font-sans italic text-stone-900 bg-stone-50 p-2 rounded border-l-2 border-stone-300">
@@ -360,7 +379,6 @@
           `;
         });
 
-        // Precision Math Protections
         cal = Math.round(cal);
         prot = Math.round(prot);
         burn = Math.round(burn);
@@ -377,6 +395,24 @@
       document.getElementById('totalCal').innerText = cal;
       document.getElementById('totalProtein').innerText = prot;
       document.getElementById('totalBurned').innerText = burn;
+
+      // Populate Master Verification Feed ("Show All Entries")
+      const allFeedEl = document.getElementById('allEntriesFeed');
+      if (appState.entries.length === 0) {
+        allFeedEl.innerHTML = '<span class="text-stone-400 italic">No entries exist anywhere in local storage.</span>';
+      } else {
+        allFeedEl.innerHTML = appState.entries.map((e, index) => {
+          return `
+            <div class="p-2 border border-stone-200 bg-stone-50 rounded space-y-1">
+              <div class="flex justify-between font-bold text-[9px] text-stone-400 uppercase">
+                <span>#${index + 1} | Date key: "${e.date}"</span>
+                <span class="text-amber-700 font-mono">ID: ${e.id ? e.id.substring(0,8) : '???'}</span>
+              </div>
+              <div class="font-sans font-medium text-stone-800 text-xs">"${e.rawText}"</div>
+            </div>
+          `;
+        }).join('');
+      }
     }
 
     async function handleLogSubmit(e) {
@@ -428,7 +464,10 @@
           })
         });
 
-        if (!response.ok) throw new Error("API stream mapping failed");
+        if (!response.ok) {
+          const errBody = await response.text();
+          throw new Error(`Gemini API error (HTTP ${response.status}): ${errBody.slice(0, 300)}`);
+        }
 
         const resData = await response.json();
         const jsonText = resData.candidates[0].content.parts[0].text;
@@ -445,13 +484,17 @@
         localStorage.setItem('body_admin_data', JSON.stringify(appState));
         
         if (supabaseClient) {
-          await supabaseClient.from('sync_entries').insert({
+          const { error: insertError } = await supabaseClient.from('sync_entries').insert({
             id: localItem.id,
             sync_key: syncKey,
             entry_date: localItem.date,
             raw_text: localItem.rawText,
             parsed_json: localItem.parsed
           });
+          if (insertError) {
+            console.error("[Cloud Save Error]", insertError);
+            alert("Saved locally, but cloud sync failed: " + insertError.message);
+          }
         }
 
         txtEl.value = '';
@@ -468,7 +511,7 @@
 
       } catch (err) {
         console.error(err);
-        alert("Execution pipeline encountered a schema mismatch.");
+        alert("Save failed: " + (err && err.message ? err.message : String(err)));
       } finally {
         btn.disabled = false;
         btn.innerText = "LOG ENTRY";
