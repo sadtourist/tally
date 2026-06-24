@@ -8,6 +8,43 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Tally">
+<style>
+  input[type=range] {
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    width: 100%;
+  }
+  input[type=range]::-webkit-slider-runnable-track {
+    height: 4px;
+    background: #e7e5e4;
+    border-radius: 2px;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: 1px solid #a8a29e;
+    margin-top: -6px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+  }
+  input[type=range]::-moz-range-track {
+    height: 4px;
+    background: #e7e5e4;
+    border-radius: 2px;
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: 1px solid #a8a29e;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+  }
+</style>
 </head>
 <body class="bg-white text-stone-900 font-mono antialiased">
 
@@ -41,7 +78,7 @@
   <div id="view-log" class="flex flex-col gap-4">
     <form onsubmit="addEntry(event)" class="flex flex-col gap-3">
       <div class="flex justify-between items-center">
-        <span class="text-[10px] font-bold tracking-wider text-stone-400 uppercase">New Entry</span>
+        <span class="text-[10px] font-bold tracking-wider text-stone-400 uppercase">🥘 New Entry (food and exercise)</span>
         <input type="date" id="entryDate" class="text-xs border border-stone-200 rounded px-2 py-0.5 bg-stone-50">
       </div>
       <textarea id="rawText" rows="4" placeholder="Type what you ate or did... e.g. Skyr with raspberries, 30 min run"
@@ -65,8 +102,39 @@
       </div>
     </div>
 
+    <div class="border-t border-stone-100 pt-3 flex flex-col gap-3">
+      <button onclick="toggleCheckin()" class="text-[10px] font-bold text-stone-400 uppercase tracking-wider text-left">💭 Check-in</button>
+      <div id="checkinPanel" class="hidden flex flex-col gap-3">
+        <div class="flex justify-end">
+          <input type="date" id="checkinDate" class="text-xs border border-stone-200 rounded px-2 py-0.5 bg-stone-50">
+        </div>
+
+        <div class="flex items-center gap-2 text-[11px] text-stone-500">
+          <span class="w-14 shrink-0">Energy</span>
+          <input type="range" min="1" max="5" value="3" id="energySlider" class="flex-1" oninput="document.getElementById('energyVal').innerText = this.value">
+          <span id="energyVal" class="w-3 shrink-0 text-right">3</span>
+        </div>
+
+        <div class="flex items-center gap-2 text-[11px] text-stone-500">
+          <span class="w-14 shrink-0">Hunger</span>
+          <input type="range" min="1" max="5" value="3" id="hungerSlider" class="flex-1" oninput="document.getElementById('hungerVal').innerText = this.value">
+          <span id="hungerVal" class="w-3 shrink-0 text-right">3</span>
+        </div>
+
+        <textarea id="checkinNote" rows="2" placeholder="Anything notable? (optional)"
+          class="w-full p-2 border border-stone-200 rounded-lg text-xs font-sans focus:outline-none focus:border-stone-900 resize-none"></textarea>
+
+        <label class="flex items-center gap-2 text-[11px] text-stone-400">
+          <input type="checkbox" id="checkinDayOverall">
+          This reflects my whole day, not just right now
+        </label>
+
+        <button onclick="addCheckin()" id="checkinBtn" class="bg-stone-900 text-white font-bold text-xs px-6 py-2.5 rounded uppercase tracking-wider">Log Check-in</button>
+      </div>
+    </div>
+
     <div class="border-t border-stone-100 pt-3">
-      <button onclick="toggleKnownFoods()" class="text-[10px] text-stone-400 uppercase tracking-wider">📚 Known Foods (<span id="knownFoodsCount">0</span>)</button>
+      <button onclick="toggleKnownFoods()" class="text-[10px] font-bold text-stone-400 uppercase tracking-wider">📚 Known Foods (<span id="knownFoodsCount">0</span>)</button>
       <div id="knownFoodsPanel" class="hidden mt-2 flex flex-col gap-2">
         <div id="knownFoodsList" class="flex flex-col gap-1 text-[11px] text-stone-500"></div>
         <button onclick="toggleManualKnownForm()" class="text-[10px] text-stone-400 uppercase tracking-wider text-left">+ Add manually</button>
@@ -90,28 +158,35 @@
       <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">Today</h3>
       <div class="grid grid-cols-3 gap-2 text-center">
         <div class="border border-stone-200 p-2.5 rounded">
-          <div class="text-[9px] text-stone-400 uppercase">Calories</div>
+          <div class="text-[9px] text-stone-400 uppercase">Calories in</div>
           <div class="text-md font-black"><span id="todayCal">0</span></div>
         </div>
         <div class="border border-stone-200 p-2.5 rounded">
-          <div class="text-[9px] text-stone-400 uppercase">Protein</div>
+          <div class="text-[9px] text-stone-400 uppercase">Protein in</div>
           <div class="text-md font-black"><span id="todayProtein">0</span>g</div>
         </div>
         <div class="border border-stone-200 p-2.5 rounded">
-          <div class="text-[9px] text-stone-400 uppercase">Burned</div>
+          <div class="text-[9px] text-stone-400 uppercase">Calories burned</div>
           <div class="text-md font-black"><span id="todayBurned">0</span></div>
         </div>
       </div>
     </div>
 
     <div>
-      <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">Last 7 Days</h3>
+      <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">Calorie intake (7 days)</h3>
       <div id="weekChart" class="flex flex-col gap-1.5"></div>
       <div class="text-[10px] text-stone-400 mt-2">Avg: <span id="weekAvgCal">0</span> kcal/day · <span id="weekAvgProtein">0</span>g protein/day</div>
     </div>
 
     <div>
-      <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">This Month</h3>
+      <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">Energy & Hunger (7 days)</h3>
+      <div class="text-xs text-stone-600 leading-relaxed">
+        Avg energy: <span id="weekAvgEnergy">—</span>/5 · Avg hunger: <span id="weekAvgHunger">—</span>/5
+      </div>
+    </div>
+
+    <div>
+      <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">Last 30 days</h3>
       <div class="text-xs text-stone-600 leading-relaxed">
         <span id="monthDaysLogged">0</span> days logged · avg <span id="monthAvgCal">0</span> kcal/day, <span id="monthAvgProtein">0</span>g protein/day
       </div>
@@ -128,7 +203,7 @@
     </div>
 
     <div>
-      <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">Entries</h3>
+      <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">Recent Entries</h3>
       <div id="feed" class="flex flex-col gap-2">
         <p class="text-xs text-stone-300 italic text-center py-6">No entries yet.</p>
       </div>
@@ -145,6 +220,7 @@
   let supabaseClient = null;
   let entries = [];
   let knownFoods = [];
+  let checkins = [];
   let lastParsed = null;
   let pendingPhoto = null; // { base64, mimeType }
 
@@ -190,6 +266,7 @@
         supabaseClient = supabase.createClient(url, key);
         fetchEntries();
         fetchKnownFoods();
+        fetchCheckins();
       } catch (err) {
         showBanner('Could not connect to Supabase: ' + err.message, 'error');
       }
@@ -222,6 +299,55 @@
 
   function toggleKnownFoods() { document.getElementById('knownFoodsPanel').classList.toggle('hidden'); }
   function toggleManualKnownForm() { document.getElementById('manualKnownForm').classList.toggle('hidden'); }
+  function toggleCheckin() { document.getElementById('checkinPanel').classList.toggle('hidden'); }
+
+  async function fetchCheckins() {
+    if (!supabaseClient) return;
+    const { data, error } = await supabaseClient
+      .from('checkins')
+      .select('*')
+      .order('entry_date', { ascending: false })
+      .order('created_at', { ascending: false });
+    if (error) { showBanner('Could not load check-ins: ' + error.message, 'error'); return; }
+    checkins = data || [];
+    render();
+  }
+
+  async function addCheckin() {
+    if (!supabaseClient) { showBanner('Add your Supabase URL + key in Settings first.', 'error'); return; }
+    const btn = document.getElementById('checkinBtn');
+    const energy = Number(document.getElementById('energySlider').value);
+    const hunger = Number(document.getElementById('hungerSlider').value);
+    const note = document.getElementById('checkinNote').value.trim();
+    const scope = document.getElementById('checkinDayOverall').checked ? 'day_overall' : 'moment';
+
+    btn.disabled = true;
+    btn.innerText = 'SAVING...';
+    try {
+      const { error } = await supabaseClient.from('checkins').insert({
+        entry_date: document.getElementById('checkinDate').value || todayStr(),
+        scope, energy, hunger,
+        note: note || null
+      });
+      if (error) throw new Error('Could not save check-in: ' + error.message);
+
+      document.getElementById('checkinNote').value = '';
+      document.getElementById('checkinDayOverall').checked = false;
+      document.getElementById('checkinDate').value = todayStr();
+      document.getElementById('energySlider').value = 3;
+      document.getElementById('hungerSlider').value = 3;
+      document.getElementById('energyVal').innerText = 3;
+      document.getElementById('hungerVal').innerText = 3;
+
+      await fetchCheckins();
+      showBanner('Check-in logged.', 'warn');
+    } catch (err) {
+      showBanner(err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerText = 'LOG CHECK-IN';
+    }
+  }
 
   function renderKnownFoods() {
     document.getElementById('knownFoodsCount').innerText = knownFoods.length;
@@ -231,10 +357,7 @@
       return;
     }
     list.innerHTML = knownFoods.map(f => `
-      <div class="flex justify-between border-b border-stone-100 py-1">
-        <span>${f.name}${f.notes ? ' <span class="text-stone-300">— ' + f.notes + '</span>' : ''}</span>
-        <span class="shrink-0 ml-2">${f.calories} kcal · ${f.protein}g</span>
-      </div>`).join('');
+      <div class="border-b border-stone-100 py-1">${f.name}</div>`).join('');
   }
 
   async function addManualKnownFood() {
@@ -456,6 +579,12 @@ Text log: "${text || '(none — see photo)'}"`;
     const weekProtein = days.map(d => entries.filter(e => e.entry_date === d).reduce((s, e) => s + (e.protein || 0), 0));
     document.getElementById('weekAvgProtein').innerText = Math.round(weekProtein.reduce((a, b) => a + b, 0) / loggedDays);
 
+    const weekCheckins = checkins.filter(c => days.includes(c.entry_date));
+    document.getElementById('weekAvgEnergy').innerText = weekCheckins.length
+      ? (weekCheckins.reduce((s, c) => s + (c.energy || 0), 0) / weekCheckins.length).toFixed(1) : '—';
+    document.getElementById('weekAvgHunger').innerText = weekCheckins.length
+      ? (weekCheckins.reduce((s, c) => s + (c.hunger || 0), 0) / weekCheckins.length).toFixed(1) : '—';
+
     // This month
     const monthPrefix = today.slice(0, 7);
     const monthEntries = entries.filter(e => (e.entry_date || '').startsWith(monthPrefix));
@@ -464,14 +593,37 @@ Text log: "${text || '(none — see photo)'}"`;
     document.getElementById('monthAvgCal').innerText = Math.round(monthEntries.reduce((s, e) => s + (e.calories || 0), 0) / monthDays);
     document.getElementById('monthAvgProtein').innerText = Math.round(monthEntries.reduce((s, e) => s + (e.protein || 0), 0) / monthDays);
 
-    // Feed
+    // Feed (entries + check-ins merged, newest first)
     const feed = document.getElementById('feed');
-    if (entries.length === 0) {
+    const feedItems = [
+      ...entries.map(e => ({ type: 'entry', date: e.entry_date, created_at: e.created_at, data: e })),
+      ...checkins.map(c => ({ type: 'checkin', date: c.entry_date, created_at: c.created_at, data: c }))
+    ].sort((a, b) => (b.date + b.created_at).localeCompare(a.date + a.created_at));
+
+    const totalCount = feedItems.length;
+    const FEED_LIMIT = 25;
+    const visibleItems = feedItems.slice(0, FEED_LIMIT);
+
+    if (visibleItems.length === 0) {
       feed.innerHTML = '<p class="text-xs text-stone-300 italic text-center py-6">No entries yet.</p>';
       return;
     }
-    feed.innerHTML = entries.map(e => {
-      const dateLabel = new Date(e.entry_date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    feed.innerHTML = visibleItems.map(item => {
+      const dateLabel = new Date(item.date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      if (item.type === 'checkin') {
+        const c = item.data;
+        const scopeLabel = c.scope === 'day_overall' ? 'Whole day' : 'In the moment';
+        return `
+          <div class="border border-stone-200 bg-stone-50 p-3 rounded text-xs space-y-1">
+            <div class="flex justify-between items-start gap-2">
+              <span class="font-sans text-stone-700">💭 Energy ${c.energy}/5 · Hunger ${c.hunger}/5</span>
+              <button onclick="deleteCheckin('${c.id}')" class="text-stone-300 hover:text-red-500 text-[10px] shrink-0">✕</button>
+            </div>
+            ${c.note ? `<div class="font-sans text-stone-500 italic">${c.note}</div>` : ''}
+            <div class="text-[10px] text-stone-400">${dateLabel} · ${scopeLabel}</div>
+          </div>`;
+      }
+      const e = item.data;
       return `
         <div class="border border-stone-200 p-3 rounded text-xs space-y-1.5">
           <div class="flex justify-between items-start gap-2">
@@ -483,7 +635,14 @@ Text log: "${text || '(none — see photo)'}"`;
             <span>${e.calories || 0} kcal · ${e.protein || 0}g protein${e.exercise_calories ? ' · ' + e.exercise_calories + ' burned' : ''}</span>
           </div>
         </div>`;
-    }).join('');
+    }).join('') + (totalCount > FEED_LIMIT ? `<p class="text-[10px] text-stone-300 text-center pt-2">Showing most recent ${FEED_LIMIT} of ${totalCount} — older entries are still saved.</p>` : '');
+  }
+
+  async function deleteCheckin(id) {
+    if (!supabaseClient) return;
+    const { error } = await supabaseClient.from('checkins').delete().eq('id', id);
+    if (error) { showBanner('Could not delete: ' + error.message, 'error'); return; }
+    await fetchCheckins();
   }
 
   async function generateInsights() {
@@ -494,15 +653,19 @@ Text log: "${text || '(none — see photo)'}"`;
     const cutoff = dateNDaysAgo(30);
     const recent = entries.filter(e => e.entry_date >= cutoff)
       .map(e => ({ date: e.entry_date, summary: e.summary, calories: e.calories, protein: e.protein, exercise_calories: e.exercise_calories }));
+    const recentCheckins = checkins.filter(c => c.entry_date >= cutoff)
+      .map(c => ({ date: c.entry_date, scope: c.scope, energy: c.energy, hunger: c.hunger, note: c.note }));
 
-    if (recent.length < 3) { box.innerText = 'Log a few more days before patterns become meaningful.'; return; }
+    if (recent.length < 3 && recentCheckins.length < 3) { box.innerText = 'Log a few more days before patterns become meaningful.'; return; }
 
     btn.disabled = true;
     btn.innerText = 'ANALYZING...';
     try {
       const prompt = `Here are someone's last 30 days of food/exercise logs as JSON: ${JSON.stringify(recent)}.
-Find 2-4 real, specific behavioral patterns or correlations (e.g. low protein after exercise days, rising frequency of a particular food/drink, weekday vs weekend differences). Be direct and practical, like a friend pointing something out — not clinical, not vague. If nothing meaningful stands out, say so plainly instead of inventing patterns.
-Return ONLY a JSON array of short strings, each under 15 words, no other text.`;
+And their energy/hunger check-ins (1-5 scale, "moment" = a snapshot at some point in the day, "day_overall" = their summary of the whole day) as JSON: ${JSON.stringify(recentCheckins)}.
+
+Find 2-4 real, specific patterns or correlations — especially ones linking how they felt (energy/hunger) to what they ate, exercised, or noted (e.g. "energy tends to be higher on days you exercised the day before", "low energy often follows light-protein dinners", "hunger spikes on days with a skipped or small breakfast"). Also include food-only patterns if relevant (e.g. low protein after exercise days, which meals contribute most calories, weekday vs weekend differences). Be direct and practical, like a friend pointing something out — not clinical, not vague. If nothing meaningful stands out, say so plainly instead of inventing patterns.
+Return ONLY a JSON array of short strings, each under 18 words, no other text.`;
 
       const body = JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } });
       const res = await callGeminiWithRetry(body);
@@ -518,6 +681,7 @@ Return ONLY a JSON array of short strings, each under 15 words, no other text.`;
   }
 
   document.getElementById('entryDate').value = todayStr();
+  document.getElementById('checkinDate').value = todayStr();
   loadSettingsIntoForm();
   initSupabase();
 </script>
