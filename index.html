@@ -391,9 +391,9 @@ Text log: "${text || '(none — see photo)'}"`;
         entry_date: dateEl.value || todayStr(),
         raw_text: text || '(photo only)',
         summary: parsed.summary || text,
-        calories: Number(parsed.calories) || 0,
-        protein: Number(parsed.protein) || 0,
-        exercise_calories: Number(parsed.exercise_calories) || 0
+        calories: Math.round(Number(parsed.calories)) || 0,
+        protein: Math.round(Number(parsed.protein)) || 0,
+        exercise_calories: Math.round(Number(parsed.exercise_calories)) || 0,
       });
       if (error) throw new Error('Supabase insert failed: ' + error.message);
 
