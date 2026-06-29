@@ -469,7 +469,7 @@
     const promptText = `Parse this food/activity log into JSON.
 
 Rules:
-- If exact amounts aren't given, estimate generously on the higher side for calories and portion sizes rather than underestimating — the user is tracking to lose weight and prefers to overcount intake when unsure.
+- If exact amounts aren't given, estimate on the higher side for calories and portion sizes rather than underestimating — the user is tracking to lose weight and prefers to overcount intake when unsure.
 - If a photo is attached, identify the food and estimate realistic portion sizes from it, combined with any text given.
 - Keep the summary short and plain.
 ${knownFoodsList ? `\nThis person has a list of previously saved "known foods" with verified nutrition values:\n${knownFoodsList}\n\nIf the log clearly refers to one of these (exact match or close variant, e.g. same brand/dish), use its saved calories/protein values exactly, scaling proportionally if a different portion is mentioned (e.g. "half" = divide by 2). Only use a known food's numbers if you're confident it's the same item — otherwise estimate fresh as usual.` : ''}
@@ -664,7 +664,7 @@ Text log: "${text || '(none — see photo)'}"`;
       const prompt = `Here are someone's last 30 days of food/exercise logs as JSON: ${JSON.stringify(recent)}.
 And their energy/hunger check-ins (1-5 scale, "moment" = a snapshot at some point in the day, "day_overall" = their summary of the whole day) as JSON: ${JSON.stringify(recentCheckins)}.
 
-Find 2-4 real, specific patterns or correlations — especially ones linking how they felt (energy/hunger) to what they ate, exercised, or noted (e.g. "energy tends to be higher on days you exercised the day before", "low energy often follows light-protein dinners", "hunger spikes on days with a skipped or small breakfast"). Also include food-only patterns if relevant (e.g. low protein after exercise days, which meals contribute most calories, weekday vs weekend differences). Be direct and practical, like a friend pointing something out — not clinical, not vague. If nothing meaningful stands out, say so plainly instead of inventing patterns.
+Find 2-4 real, specific patterns or correlations — especially ones linking how they felt (energy/hunger) to what they ate, exercised, or noted (e.g. "energy tends to be higher on days you exercised the day before", "low energy often follows light-protein dinners", "hunger spikes on days with a skipped or small breakfast", "Prioritize water, vegetables and protein over the next couple of days rather than trying to "make up" for the weekend.", "fiber intake is variable, but better when eating at home."). Also include food-only patterns if relevant (e.g. low protein after exercise days, which meals contribute most calories, weekday vs weekend differences). Be direct and practical, like a friend pointing something out — not clinical, not vague. If nothing meaningful stands out, say so plainly instead of inventing patterns.
 Return ONLY a JSON array of short strings, each under 18 words, no other text.`;
 
       const body = JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } });
