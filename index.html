@@ -70,6 +70,12 @@
     </div>
     <button onclick="saveSettings()" class="w-full bg-stone-900 text-white font-bold py-2 rounded text-[10px] uppercase tracking-wider">Save</button>
     <p class="text-stone-400 text-[10px] leading-relaxed">Use the exact same three values on every device.</p>
+
+    <div class="border-t border-stone-200 pt-3 mt-1">
+      <button onclick="backfillNutrients()" id="backfillBtn" class="w-full bg-stone-200 text-stone-700 font-bold py-2 rounded text-[10px] uppercase tracking-wider">Backfill missing nutrient data</button>
+      <p class="text-stone-400 text-[10px] leading-relaxed mt-1">Re-checks older entries logged before fibre/vegetable/alcohol tracking existed and fills in what's missing. Uses one Gemini call per entry.</p>
+      <p id="backfillStatus" class="text-stone-500 text-[10px] mt-1"></p>
+    </div>
   </div>
 
   <div id="banner" class="hidden mb-4 p-3 rounded text-xs leading-relaxed"></div>
@@ -90,7 +96,12 @@
       </label>
       <img id="photoPreview" class="hidden w-full max-h-48 object-cover rounded-lg border border-stone-200">
 
-      <input type="text" id="satisfactionNote" placeholder="Satisfaction? (optional — how full, satisfied, or worth it it felt)"
+      <div class="flex items-center gap-2 text-[11px] text-stone-500">
+        <span class="w-20 shrink-0">Satisfaction</span>
+        <input type="range" min="1" max="5" value="3" id="satisfactionSlider" class="flex-1" oninput="document.getElementById('satisfactionVal').innerText = this.value">
+        <span id="satisfactionVal" class="w-3 shrink-0 text-right">3</span>
+      </div>
+      <input type="text" id="satisfactionNote" placeholder="Why? (optional)"
         class="w-full p-2 border border-stone-200 rounded-lg text-xs font-sans focus:outline-none focus:border-stone-900">
 
       <button type="submit" id="submitBtn" class="bg-stone-900 text-white font-bold text-xs px-6 py-2.5 rounded uppercase tracking-wider">Add Entry</button>
@@ -131,15 +142,17 @@
           <input type="range" min="1" max="5" value="3" id="sleepSlider" class="flex-1" oninput="document.getElementById('sleepVal').innerText = this.value">
           <span id="sleepVal" class="w-3 shrink-0 text-right">3</span>
         </div>
-        <p class="text-[10px] text-stone-300 -mt-2">Sleep refers to the night before this date.</p>
 
-        <textarea id="checkinNote" rows="2" placeholder="Anything notable? (optional)"
+        <textarea id="checkinNote" rows="2" placeholder="Commentary (optional)"
           class="w-full p-2 border border-stone-200 rounded-lg text-xs font-sans focus:outline-none focus:border-stone-900 resize-none"></textarea>
 
         <label class="flex items-center gap-2 text-[11px] text-stone-400">
           <input type="checkbox" id="checkinDayOverall">
           This reflects my whole day, not just right now
         </label>
+
+         <p class="text-[10px] text-stone-300 -mt-2">Note: Sleep refers to the night before this date.</p>
+
 
         <button onclick="addCheckin()" id="checkinBtn" class="bg-stone-900 text-white font-bold text-xs px-6 py-2.5 rounded uppercase tracking-wider">Log Check-in</button>
       </div>
@@ -187,13 +200,17 @@
     <div>
       <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">Calorie intake (7 days)</h3>
       <div id="weekChart" class="flex flex-col gap-1.5"></div>
-      <div class="text-[10px] text-stone-400 mt-2">Avg: <span id="weekAvgCal">0</span> kcal/day · <span id="weekAvgProtein">0</span>g protein/day</div>
-      <div class="text-[10px] text-stone-400 mt-1">🥦 Vegetables on <span id="weekVegDays">0</span>/7 days · 🌾 Avg fibre: <span id="weekAvgFibre">0</span>g/day</div>
     </div>
 
     <div>
-      <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">Energy & Hunger (7 days)</h3>
+      <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">Last 7 days</h3>
       <div class="text-xs text-stone-600 leading-relaxed">
+        Avg: <span id="weekAvgCal">0</span> kcal/day · <span id="weekAvgProtein">0</span>g protein/day
+      </div>
+      <div class="text-xs text-stone-600 leading-relaxed mt-1">
+        Vegetables on <span id="weekVegDays">0</span>/7 days · Avg fibre: <span id="weekAvgFibre">0</span>g/day
+      </div>
+      <div class="text-xs text-stone-600 leading-relaxed mt-1">
         Avg energy: <span id="weekAvgEnergy">—</span>/5 · Avg hunger: <span id="weekAvgHunger">—</span>/5
       </div>
     </div>
@@ -201,10 +218,10 @@
     <div>
       <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">Last 30 days</h3>
       <div class="text-xs text-stone-600 leading-relaxed">
-        <span id="monthDaysLogged">0</span> days logged · avg <span id="monthAvgCal">0</span> kcal/day, <span id="monthAvgProtein">0</span>g protein/day
+        <span id="monthDaysLogged">0</span> days logged · avg <span id="monthAvgCal">0</span> kcal/day, <span id="monthAvgProtein">0</span>g protein/day · 
       </div>
       <div class="text-xs text-stone-600 leading-relaxed mt-1">
-        🍷 <span id="monthAlcoholUnits">0</span> alcohol units
+      <span id="monthAlcoholUnits">0</span> alcohol units
       </div>
     </div>
 
@@ -554,6 +571,61 @@ Text log: "${text || '(none — see photo)'}"`;
     return JSON.parse(data.candidates[0].content.parts[0].text);
   }
 
+  async function backfillNutrients() {
+    if (!supabaseClient) { showBanner('Add your Supabase URL + key in Settings first.', 'error'); return; }
+    if (!localStorage.getItem('gemini_key')) { showBanner('Add your Gemini API key in Settings first.', 'error'); return; }
+
+    const btn = document.getElementById('backfillBtn');
+    const status = document.getElementById('backfillStatus');
+    const missing = entries.filter(e => e.protein_quality == null && e.raw_text);
+
+    if (missing.length === 0) { status.innerText = 'Nothing to backfill — every entry already has this data.'; return; }
+
+    btn.disabled = true;
+    let done = 0;
+    let failed = 0;
+
+    for (const entry of missing) {
+      status.innerText = `Processing ${done + 1} of ${missing.length}...`;
+      try {
+        const promptText = `Assess the nutritional quality of this food/activity log. If it's not food (e.g. pure exercise), return zeros/nulls as appropriate.
+
+Return ONLY this JSON shape, no other text:
+{"alcohol_units": 0, "fibre_grams": 0, "protein_quality": "Moderate", "fibre_quality": "Moderate", "vegetable_servings": 0, "fruit_servings": 0, "healthy_fats_quality": "Moderate", "processed_level": "Moderate", "whole_foods_pct": 50, "satiety_quality": "Moderate"}
+
+Log: "${entry.raw_text}"`;
+        const body = JSON.stringify({
+          contents: [{ parts: [{ text: promptText }] }],
+          generationConfig: { responseMimeType: "application/json" }
+        });
+        const response = await callGeminiWithRetry(body);
+        const data = await response.json();
+        const parsed = JSON.parse(data.candidates[0].content.parts[0].text);
+
+        await supabaseClient.from('entries').update({
+          alcohol_units: entry.alcohol_units || Number(parsed.alcohol_units) || 0,
+          fibre_grams: Number(parsed.fibre_grams) || 0,
+          protein_quality: parsed.protein_quality || null,
+          fibre_quality: parsed.fibre_quality || null,
+          vegetable_servings: Number(parsed.vegetable_servings) || 0,
+          fruit_servings: Number(parsed.fruit_servings) || 0,
+          healthy_fats_quality: parsed.healthy_fats_quality || null,
+          processed_level: parsed.processed_level || null,
+          whole_foods_pct: parsed.whole_foods_pct != null ? Math.round(Number(parsed.whole_foods_pct)) : null,
+          satiety_quality: parsed.satiety_quality || null,
+        }).eq('id', entry.id);
+
+        done++;
+      } catch (err) {
+        failed++;
+      }
+    }
+
+    status.innerText = `Done: updated ${done} ${failed ? `(${failed} failed — try again later if quota-limited)` : ''}`;
+    btn.disabled = false;
+    await fetchEntries();
+  }
+
   async function addEntry(e) {
     e.preventDefault();
     clearBanner();
@@ -572,6 +644,7 @@ Text log: "${text || '(none — see photo)'}"`;
     try {
       const parsed = await callGemini(text, pendingPhoto);
       const satisfactionNote = document.getElementById('satisfactionNote').value.trim();
+      const satisfactionLevel = Number(document.getElementById('satisfactionSlider').value);
 
       const { error } = await supabaseClient.from('entries').insert({
         entry_date: dateEl.value || todayStr(),
@@ -591,6 +664,7 @@ Text log: "${text || '(none — see photo)'}"`;
         whole_foods_pct: parsed.whole_foods_pct != null ? Math.round(Number(parsed.whole_foods_pct)) : null,
         satiety_quality: parsed.satiety_quality || null,
         satisfaction_note: satisfactionNote || null,
+        satisfaction_level: satisfactionLevel,
       });
       if (error) throw new Error('Supabase insert failed: ' + error.message);
 
@@ -598,6 +672,8 @@ Text log: "${text || '(none — see photo)'}"`;
       clearPhoto();
       dateEl.value = todayStr();
       document.getElementById('satisfactionNote').value = '';
+      document.getElementById('satisfactionSlider').value = 3;
+      document.getElementById('satisfactionVal').innerText = 3;
       await fetchEntries();
       showBanner('Saved: ' + (parsed.summary || text), 'warn');
       showNutrientOverview(parsed);
@@ -706,18 +782,16 @@ Text log: "${text || '(none — see photo)'}"`;
           </div>`;
       }
       const e = item.data;
-      const badges = nutrientBadges(e);
       return `
         <div class="border border-stone-200 p-3 rounded text-xs space-y-1.5">
           <div class="flex justify-between items-start gap-2">
             <span class="font-sans text-stone-900">${e.summary || e.raw_text}</span>
             <button onclick="deleteEntry('${e.id}')" class="text-stone-300 hover:text-red-500 text-[10px] shrink-0">✕</button>
           </div>
-          ${e.satisfaction_note ? `<div class="font-sans text-stone-500 italic">😊 ${e.satisfaction_note}</div>` : ''}
-          ${badges.length ? `<div class="text-[10px] text-stone-400">${badges.map(([l, v]) => l + ': ' + v).join(' · ')}</div>` : ''}
+          ${e.satisfaction_note ? `<div class="font-sans text-stone-500 italic">${e.satisfaction_note}</div>` : ''}
           <div class="flex justify-between text-[10px] text-stone-400">
             <span>${dateLabel}</span>
-            <span>${e.calories || 0} kcal · ${e.protein || 0}g protein${e.exercise_calories ? ' · ' + e.exercise_calories + ' burned' : ''}${e.alcohol_units ? ' · 🍷 ' + e.alcohol_units + ' units' : ''}</span>
+            <span>${e.calories || 0} kcal · ${e.protein || 0}g protein${e.fibre_grams ? ' · ' + Math.round(e.fibre_grams) + 'g fibre' : ''}${e.satisfaction_level ? ' · satisfaction ' + e.satisfaction_level + '/5' : ''}${e.exercise_calories ? ' · ' + e.exercise_calories + ' burned' : ''}${e.alcohol_units ? ' · ' + e.alcohol_units + ' alcohol units' : ''}</span>
           </div>
         </div>`;
     }).join('') + (totalCount > FEED_LIMIT ? `<p class="text-[10px] text-stone-300 text-center pt-2">Showing most recent ${FEED_LIMIT} of ${totalCount} — older entries are still saved.</p>` : '');
@@ -737,7 +811,7 @@ Text log: "${text || '(none — see photo)'}"`;
 
     const cutoff = dateNDaysAgo(30);
     const recent = entries.filter(e => e.entry_date >= cutoff)
-      .map(e => ({ date: e.entry_date, summary: e.summary, calories: e.calories, protein: e.protein, exercise_calories: e.exercise_calories, alcohol_units: e.alcohol_units, fibre_grams: e.fibre_grams, vegetable_servings: e.vegetable_servings, processed_level: e.processed_level, satiety_quality: e.satiety_quality, satisfaction_note: e.satisfaction_note }));
+      .map(e => ({ date: e.entry_date, summary: e.summary, calories: e.calories, protein: e.protein, exercise_calories: e.exercise_calories, alcohol_units: e.alcohol_units, fibre_grams: e.fibre_grams, vegetable_servings: e.vegetable_servings, processed_level: e.processed_level, satiety_quality: e.satiety_quality, satisfaction_level: e.satisfaction_level, satisfaction_note: e.satisfaction_note }));
     const recentCheckins = checkins.filter(c => c.entry_date >= cutoff)
       .map(c => ({ date: c.entry_date, scope: c.scope, energy: c.energy, hunger: c.hunger, sleep: c.sleep, note: c.note }));
 
