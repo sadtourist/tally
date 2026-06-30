@@ -190,6 +190,9 @@
       <div class="text-xs text-stone-600 leading-relaxed">
         <span id="monthDaysLogged">0</span> days logged · avg <span id="monthAvgCal">0</span> kcal/day, <span id="monthAvgProtein">0</span>g protein/day
       </div>
+      <div class="text-xs text-stone-600 leading-relaxed mt-1">
+        🍷 <span id="monthAlcoholUnits">0</span> alcohol units
+      </div>
     </div>
 
     <div>
@@ -471,11 +474,12 @@
 Rules:
 - If exact amounts aren't given, estimate on the higher side for calories and portion sizes rather than underestimating — the user is tracking to lose weight and prefers to overcount intake when unsure.
 - If a photo is attached, identify the food and estimate realistic portion sizes from it, combined with any text given.
+- If any alcoholic drinks are mentioned, estimate alcohol_units using standard UK alcohol units (1 unit = 10ml/8g pure alcohol) based on typical drink size and ABV — e.g. a standard 175ml glass of wine (~12% ABV) is about 2.1 units, a pint of regular beer (~4-5% ABV) is about 2-2.3 units, a single 25ml spirit shot (~40% ABV) is about 1 unit. Estimate generously on the higher side if exact size/strength isn't given. 0 if no alcohol is mentioned.
 - Keep the summary short and plain.
 ${knownFoodsList ? `\nThis person has a list of previously saved "known foods" with verified nutrition values:\n${knownFoodsList}\n\nIf the log clearly refers to one of these (exact match or close variant, e.g. same brand/dish), use its saved calories/protein values exactly, scaling proportionally if a different portion is mentioned (e.g. "half" = divide by 2). Only use a known food's numbers if you're confident it's the same item — otherwise estimate fresh as usual.` : ''}
 
 Return ONLY this JSON shape, no other text:
-{"summary": "short clean one-line description", "calories": 0, "protein": 0, "exercise_calories": 0}
+{"summary": "short clean one-line description", "calories": 0, "protein": 0, "exercise_calories": 0, "alcohol_units": 0}
 
 Text log: "${text || '(none — see photo)'}"`;
 
@@ -517,6 +521,7 @@ Text log: "${text || '(none — see photo)'}"`;
         calories: Math.round(Number(parsed.calories)) || 0,
         protein: Math.round(Number(parsed.protein)) || 0,
         exercise_calories: Math.round(Number(parsed.exercise_calories)) || 0,
+        alcohol_units: Number(parsed.alcohol_units) || 0,
       });
       if (error) throw new Error('Supabase insert failed: ' + error.message);
 
@@ -585,13 +590,14 @@ Text log: "${text || '(none — see photo)'}"`;
     document.getElementById('weekAvgHunger').innerText = weekCheckins.length
       ? (weekCheckins.reduce((s, c) => s + (c.hunger || 0), 0) / weekCheckins.length).toFixed(1) : '—';
 
-    // This month
-    const monthPrefix = today.slice(0, 7);
-    const monthEntries = entries.filter(e => (e.entry_date || '').startsWith(monthPrefix));
+    // Last 30 days
+    const monthCutoff = dateNDaysAgo(29);
+    const monthEntries = entries.filter(e => e.entry_date >= monthCutoff);
     const monthDays = new Set(monthEntries.map(e => e.entry_date)).size || 1;
     document.getElementById('monthDaysLogged').innerText = new Set(monthEntries.map(e => e.entry_date)).size;
     document.getElementById('monthAvgCal').innerText = Math.round(monthEntries.reduce((s, e) => s + (e.calories || 0), 0) / monthDays);
     document.getElementById('monthAvgProtein').innerText = Math.round(monthEntries.reduce((s, e) => s + (e.protein || 0), 0) / monthDays);
+    document.getElementById('monthAlcoholUnits').innerText = monthEntries.reduce((s, e) => s + (Number(e.alcohol_units) || 0), 0).toFixed(1).replace(/\.0$/, '');
 
     // Feed (entries + check-ins merged, newest first)
     const feed = document.getElementById('feed');
@@ -632,7 +638,7 @@ Text log: "${text || '(none — see photo)'}"`;
           </div>
           <div class="flex justify-between text-[10px] text-stone-400">
             <span>${dateLabel}</span>
-            <span>${e.calories || 0} kcal · ${e.protein || 0}g protein${e.exercise_calories ? ' · ' + e.exercise_calories + ' burned' : ''}</span>
+            <span>${e.calories || 0} kcal · ${e.protein || 0}g protein${e.exercise_calories ? ' · ' + e.exercise_calories + ' burned' : ''}${e.alcohol_units ? ' · 🍷 ' + e.alcohol_units + ' units' : ''}</span>
           </div>
         </div>`;
     }).join('') + (totalCount > FEED_LIMIT ? `<p class="text-[10px] text-stone-300 text-center pt-2">Showing most recent ${FEED_LIMIT} of ${totalCount} — older entries are still saved.</p>` : '');
@@ -652,7 +658,7 @@ Text log: "${text || '(none — see photo)'}"`;
 
     const cutoff = dateNDaysAgo(30);
     const recent = entries.filter(e => e.entry_date >= cutoff)
-      .map(e => ({ date: e.entry_date, summary: e.summary, calories: e.calories, protein: e.protein, exercise_calories: e.exercise_calories }));
+      .map(e => ({ date: e.entry_date, summary: e.summary, calories: e.calories, protein: e.protein, exercise_calories: e.exercise_calories, alcohol_units: e.alcohol_units }));
     const recentCheckins = checkins.filter(c => c.entry_date >= cutoff)
       .map(c => ({ date: c.entry_date, scope: c.scope, energy: c.energy, hunger: c.hunger, note: c.note }));
 
