@@ -90,8 +90,13 @@
       </label>
       <img id="photoPreview" class="hidden w-full max-h-48 object-cover rounded-lg border border-stone-200">
 
+      <input type="text" id="satisfactionNote" placeholder="Satisfaction? (optional — how full, satisfied, or worth it it felt)"
+        class="w-full p-2 border border-stone-200 rounded-lg text-xs font-sans focus:outline-none focus:border-stone-900">
+
       <button type="submit" id="submitBtn" class="bg-stone-900 text-white font-bold text-xs px-6 py-2.5 rounded uppercase tracking-wider">Add Entry</button>
     </form>
+
+    <div id="nutrientOverview" class="hidden border border-stone-200 rounded-lg p-3 text-xs flex flex-col gap-1"></div>
 
     <div id="saveKnownPrompt" class="hidden border border-stone-200 rounded-lg p-3 bg-stone-50 flex flex-col gap-2">
       <span class="text-[10px] text-stone-500">Save this as a known food for next time?</span>
@@ -120,6 +125,13 @@
           <input type="range" min="1" max="5" value="3" id="hungerSlider" class="flex-1" oninput="document.getElementById('hungerVal').innerText = this.value">
           <span id="hungerVal" class="w-3 shrink-0 text-right">3</span>
         </div>
+
+        <div class="flex items-center gap-2 text-[11px] text-stone-500">
+          <span class="w-14 shrink-0">Sleep</span>
+          <input type="range" min="1" max="5" value="3" id="sleepSlider" class="flex-1" oninput="document.getElementById('sleepVal').innerText = this.value">
+          <span id="sleepVal" class="w-3 shrink-0 text-right">3</span>
+        </div>
+        <p class="text-[10px] text-stone-300 -mt-2">Sleep refers to the night before this date.</p>
 
         <textarea id="checkinNote" rows="2" placeholder="Anything notable? (optional)"
           class="w-full p-2 border border-stone-200 rounded-lg text-xs font-sans focus:outline-none focus:border-stone-900 resize-none"></textarea>
@@ -176,6 +188,7 @@
       <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">Calorie intake (7 days)</h3>
       <div id="weekChart" class="flex flex-col gap-1.5"></div>
       <div class="text-[10px] text-stone-400 mt-2">Avg: <span id="weekAvgCal">0</span> kcal/day · <span id="weekAvgProtein">0</span>g protein/day</div>
+      <div class="text-[10px] text-stone-400 mt-1">🥦 Vegetables on <span id="weekVegDays">0</span>/7 days · 🌾 Avg fibre: <span id="weekAvgFibre">0</span>g/day</div>
     </div>
 
     <div>
@@ -228,6 +241,42 @@
   let pendingPhoto = null; // { base64, mimeType }
 
   function todayStr() { return new Date().toISOString().split('T')[0]; }
+
+  // Flip to false for words-only badges, no code restructuring needed.
+  const USE_EMOJI_BADGES = true;
+  const BADGE_EMOJI = {
+    protein: '🥩', fibre: '🌾', vegetables: '🥦', fruit: '🍎',
+    healthy_fats: '🥑', whole_foods: '🌱', processed: '🏭', satiety: '🤤'
+  };
+  function badgeLabel(key, text) {
+    return (USE_EMOJI_BADGES ? BADGE_EMOJI[key] + ' ' : '') + text;
+  }
+
+  function nutrientBadges(e) {
+    const badges = [];
+    if (e.protein_quality) badges.push([badgeLabel('protein', 'Protein'), e.protein_quality]);
+    if (e.fibre_quality) badges.push([badgeLabel('fibre', 'Fibre'), e.fibre_quality]);
+    if (e.vegetable_servings != null) badges.push([badgeLabel('vegetables', 'Vegetables'), e.vegetable_servings + ' serving' + (e.vegetable_servings == 1 ? '' : 's')]);
+    if (e.fruit_servings != null) badges.push([badgeLabel('fruit', 'Fruit'), e.fruit_servings + ' serving' + (e.fruit_servings == 1 ? '' : 's')]);
+    if (e.healthy_fats_quality) badges.push([badgeLabel('healthy_fats', 'Healthy fats'), e.healthy_fats_quality]);
+    if (e.whole_foods_pct != null) badges.push([badgeLabel('whole_foods', 'Whole foods'), e.whole_foods_pct + '%']);
+    if (e.processed_level) badges.push([badgeLabel('processed', 'Processed'), e.processed_level]);
+    if (e.satiety_quality) badges.push([badgeLabel('satiety', 'Satiety'), e.satiety_quality]);
+    return badges;
+  }
+
+  function showNutrientOverview(parsed) {
+    const box = document.getElementById('nutrientOverview');
+    const badges = nutrientBadges({
+      protein_quality: parsed.protein_quality, fibre_quality: parsed.fibre_quality,
+      vegetable_servings: parsed.vegetable_servings, fruit_servings: parsed.fruit_servings,
+      healthy_fats_quality: parsed.healthy_fats_quality, whole_foods_pct: parsed.whole_foods_pct,
+      processed_level: parsed.processed_level, satiety_quality: parsed.satiety_quality
+    });
+    if (badges.length === 0) { box.classList.add('hidden'); return; }
+    box.innerHTML = badges.map(([label, val]) => `<div class="flex justify-between"><span class="text-stone-500">${label}</span><span class="font-bold text-stone-800">${val}</span></div>`).join('');
+    box.classList.remove('hidden');
+  }
 
   function showBanner(msg, kind) {
     const b = document.getElementById('banner');
@@ -321,6 +370,7 @@
     const btn = document.getElementById('checkinBtn');
     const energy = Number(document.getElementById('energySlider').value);
     const hunger = Number(document.getElementById('hungerSlider').value);
+    const sleep = Number(document.getElementById('sleepSlider').value);
     const note = document.getElementById('checkinNote').value.trim();
     const scope = document.getElementById('checkinDayOverall').checked ? 'day_overall' : 'moment';
 
@@ -329,7 +379,7 @@
     try {
       const { error } = await supabaseClient.from('checkins').insert({
         entry_date: document.getElementById('checkinDate').value || todayStr(),
-        scope, energy, hunger,
+        scope, energy, hunger, sleep,
         note: note || null
       });
       if (error) throw new Error('Could not save check-in: ' + error.message);
@@ -339,8 +389,10 @@
       document.getElementById('checkinDate').value = todayStr();
       document.getElementById('energySlider').value = 3;
       document.getElementById('hungerSlider').value = 3;
+      document.getElementById('sleepSlider').value = 3;
       document.getElementById('energyVal').innerText = 3;
       document.getElementById('hungerVal').innerText = 3;
+      document.getElementById('sleepVal').innerText = 3;
 
       await fetchCheckins();
       showBanner('Check-in logged.', 'warn');
@@ -476,10 +528,16 @@ Rules:
 - If a photo is attached, identify the food and estimate realistic portion sizes from it, combined with any text given.
 - If any alcoholic drinks are mentioned, estimate alcohol_units using standard UK alcohol units (1 unit = 10ml/8g pure alcohol) based on typical drink size and ABV — e.g. a standard 175ml glass of wine (~12% ABV) is about 2.1 units, a pint of regular beer (~4-5% ABV) is about 2-2.3 units, a single 25ml spirit shot (~40% ABV) is about 1 unit. Estimate generously on the higher side if exact size/strength isn't given. 0 if no alcohol is mentioned.
 - Keep the summary short and plain.
+- Also assess the meal's nutritional quality (skip/zero these if the log isn't food, e.g. it's exercise or a check-in note):
+  - fibre_grams: estimated grams of fibre (number)
+  - protein_quality / fibre_quality / healthy_fats_quality / satiety_quality: one of "Low", "Moderate", "High", "Excellent"
+  - vegetable_servings / fruit_servings: estimated servings (number, can be 0)
+  - processed_level: one of "Low", "Moderate", "High" (how processed/refined the food is — lower is better)
+  - whole_foods_pct: rough % of the meal that's whole/minimally processed food (0-100)
 ${knownFoodsList ? `\nThis person has a list of previously saved "known foods" with verified nutrition values:\n${knownFoodsList}\n\nIf the log clearly refers to one of these (exact match or close variant, e.g. same brand/dish), use its saved calories/protein values exactly, scaling proportionally if a different portion is mentioned (e.g. "half" = divide by 2). Only use a known food's numbers if you're confident it's the same item — otherwise estimate fresh as usual.` : ''}
 
 Return ONLY this JSON shape, no other text:
-{"summary": "short clean one-line description", "calories": 0, "protein": 0, "exercise_calories": 0, "alcohol_units": 0}
+{"summary": "short clean one-line description", "calories": 0, "protein": 0, "exercise_calories": 0, "alcohol_units": 0, "fibre_grams": 0, "protein_quality": "Moderate", "fibre_quality": "Moderate", "vegetable_servings": 0, "fruit_servings": 0, "healthy_fats_quality": "Moderate", "processed_level": "Moderate", "whole_foods_pct": 50, "satiety_quality": "Moderate"}
 
 Text log: "${text || '(none — see photo)'}"`;
 
@@ -513,6 +571,7 @@ Text log: "${text || '(none — see photo)'}"`;
 
     try {
       const parsed = await callGemini(text, pendingPhoto);
+      const satisfactionNote = document.getElementById('satisfactionNote').value.trim();
 
       const { error } = await supabaseClient.from('entries').insert({
         entry_date: dateEl.value || todayStr(),
@@ -522,14 +581,26 @@ Text log: "${text || '(none — see photo)'}"`;
         protein: Math.round(Number(parsed.protein)) || 0,
         exercise_calories: Math.round(Number(parsed.exercise_calories)) || 0,
         alcohol_units: Number(parsed.alcohol_units) || 0,
+        fibre_grams: Number(parsed.fibre_grams) || 0,
+        protein_quality: parsed.protein_quality || null,
+        fibre_quality: parsed.fibre_quality || null,
+        vegetable_servings: Number(parsed.vegetable_servings) || 0,
+        fruit_servings: Number(parsed.fruit_servings) || 0,
+        healthy_fats_quality: parsed.healthy_fats_quality || null,
+        processed_level: parsed.processed_level || null,
+        whole_foods_pct: parsed.whole_foods_pct != null ? Math.round(Number(parsed.whole_foods_pct)) : null,
+        satiety_quality: parsed.satiety_quality || null,
+        satisfaction_note: satisfactionNote || null,
       });
       if (error) throw new Error('Supabase insert failed: ' + error.message);
 
       txtEl.value = '';
       clearPhoto();
       dateEl.value = todayStr();
+      document.getElementById('satisfactionNote').value = '';
       await fetchEntries();
       showBanner('Saved: ' + (parsed.summary || text), 'warn');
+      showNutrientOverview(parsed);
 
       lastParsed = parsed;
       document.getElementById('knownFoodName').value = parsed.summary || text;
@@ -584,6 +655,11 @@ Text log: "${text || '(none — see photo)'}"`;
     const weekProtein = days.map(d => entries.filter(e => e.entry_date === d).reduce((s, e) => s + (e.protein || 0), 0));
     document.getElementById('weekAvgProtein').innerText = Math.round(weekProtein.reduce((a, b) => a + b, 0) / loggedDays);
 
+    const weekVegDayCount = days.filter(d => entries.some(e => e.entry_date === d && (Number(e.vegetable_servings) || 0) > 0)).length;
+    document.getElementById('weekVegDays').innerText = weekVegDayCount;
+    const weekFibreTotal = days.reduce((s, d) => s + entries.filter(e => e.entry_date === d).reduce((s2, e) => s2 + (Number(e.fibre_grams) || 0), 0), 0);
+    document.getElementById('weekAvgFibre').innerText = Math.round(weekFibreTotal / loggedDays);
+
     const weekCheckins = checkins.filter(c => days.includes(c.entry_date));
     document.getElementById('weekAvgEnergy').innerText = weekCheckins.length
       ? (weekCheckins.reduce((s, c) => s + (c.energy || 0), 0) / weekCheckins.length).toFixed(1) : '—';
@@ -622,7 +698,7 @@ Text log: "${text || '(none — see photo)'}"`;
         return `
           <div class="border border-stone-200 bg-stone-50 p-3 rounded text-xs space-y-1">
             <div class="flex justify-between items-start gap-2">
-              <span class="font-sans text-stone-700">💭 Energy ${c.energy}/5 · Hunger ${c.hunger}/5</span>
+              <span class="font-sans text-stone-700">💭 Energy ${c.energy}/5 · Hunger ${c.hunger}/5${c.sleep != null ? ' · 😴 ' + c.sleep + '/5' : ''}</span>
               <button onclick="deleteCheckin('${c.id}')" class="text-stone-300 hover:text-red-500 text-[10px] shrink-0">✕</button>
             </div>
             ${c.note ? `<div class="font-sans text-stone-500 italic">${c.note}</div>` : ''}
@@ -630,12 +706,15 @@ Text log: "${text || '(none — see photo)'}"`;
           </div>`;
       }
       const e = item.data;
+      const badges = nutrientBadges(e);
       return `
         <div class="border border-stone-200 p-3 rounded text-xs space-y-1.5">
           <div class="flex justify-between items-start gap-2">
             <span class="font-sans text-stone-900">${e.summary || e.raw_text}</span>
             <button onclick="deleteEntry('${e.id}')" class="text-stone-300 hover:text-red-500 text-[10px] shrink-0">✕</button>
           </div>
+          ${e.satisfaction_note ? `<div class="font-sans text-stone-500 italic">😊 ${e.satisfaction_note}</div>` : ''}
+          ${badges.length ? `<div class="text-[10px] text-stone-400">${badges.map(([l, v]) => l + ': ' + v).join(' · ')}</div>` : ''}
           <div class="flex justify-between text-[10px] text-stone-400">
             <span>${dateLabel}</span>
             <span>${e.calories || 0} kcal · ${e.protein || 0}g protein${e.exercise_calories ? ' · ' + e.exercise_calories + ' burned' : ''}${e.alcohol_units ? ' · 🍷 ' + e.alcohol_units + ' units' : ''}</span>
@@ -658,9 +737,9 @@ Text log: "${text || '(none — see photo)'}"`;
 
     const cutoff = dateNDaysAgo(30);
     const recent = entries.filter(e => e.entry_date >= cutoff)
-      .map(e => ({ date: e.entry_date, summary: e.summary, calories: e.calories, protein: e.protein, exercise_calories: e.exercise_calories, alcohol_units: e.alcohol_units }));
+      .map(e => ({ date: e.entry_date, summary: e.summary, calories: e.calories, protein: e.protein, exercise_calories: e.exercise_calories, alcohol_units: e.alcohol_units, fibre_grams: e.fibre_grams, vegetable_servings: e.vegetable_servings, processed_level: e.processed_level, satiety_quality: e.satiety_quality, satisfaction_note: e.satisfaction_note }));
     const recentCheckins = checkins.filter(c => c.entry_date >= cutoff)
-      .map(c => ({ date: c.entry_date, scope: c.scope, energy: c.energy, hunger: c.hunger, note: c.note }));
+      .map(c => ({ date: c.entry_date, scope: c.scope, energy: c.energy, hunger: c.hunger, sleep: c.sleep, note: c.note }));
 
     if (recent.length < 3 && recentCheckins.length < 3) { box.innerText = 'Log a few more days before patterns become meaningful.'; return; }
 
@@ -668,9 +747,9 @@ Text log: "${text || '(none — see photo)'}"`;
     btn.innerText = 'ANALYZING...';
     try {
       const prompt = `Here are someone's last 30 days of food/exercise logs as JSON: ${JSON.stringify(recent)}.
-And their energy/hunger check-ins (1-5 scale, "moment" = a snapshot at some point in the day, "day_overall" = their summary of the whole day) as JSON: ${JSON.stringify(recentCheckins)}.
+And their energy/hunger/sleep check-ins (1-5 scale, "moment" = a snapshot at some point in the day, "day_overall" = their summary of the whole day, sleep refers to the night before that date) as JSON: ${JSON.stringify(recentCheckins)}.
 
-Find 2-4 real, specific patterns or correlations — especially ones linking how they felt (energy/hunger) to what they ate, exercised, or noted (e.g. "energy tends to be higher on days you exercised the day before", "low energy often follows light-protein dinners", "hunger spikes on days with a skipped or small breakfast", "Prioritize water, vegetables and protein over the next couple of days rather than trying to "make up" for the weekend.", "fiber intake is variable, but better when eating at home."). Also include food-only patterns if relevant (e.g. low protein after exercise days, which meals contribute most calories, weekday vs weekend differences). Be direct and practical, like a friend pointing something out — not clinical, not vague. If nothing meaningful stands out, say so plainly instead of inventing patterns.
+Find 2-4 real, specific patterns or correlations — especially ones linking how they felt (energy/hunger/sleep) to what they ate, exercised, or noted (e.g. "energy tends to be higher on days you exercised the day before", "low energy often follows light-protein dinners", "hunger spikes on days with a skipped or small breakfast", "sleep tends to be worse after high-alcohol days", "you report feeling sluggish after meals heavy in processed food"). Also look at satisfaction_note for whether higher-calorie or indulgent meals were rated worth it vs not. Also include food-only patterns if relevant (e.g. low protein after exercise days, which meals contribute most calories, fibre intake variability, weekday vs weekend differences). Be direct and practical, like a friend pointing something out — not clinical, not vague. If nothing meaningful stands out, say so plainly instead of inventing patterns.
 Return ONLY a JSON array of short strings, each under 18 words, no other text.`;
 
       const body = JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } });
