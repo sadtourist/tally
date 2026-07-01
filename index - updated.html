@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Tally</title>
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Tally">
+<style>
+  input[type=range] {
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    width: 100%;
+  }
+  input[type=range]::-webkit-slider-runnable-track {
+    height: 4px;
+    background: #e7e5e4;
+    border-radius: 2px;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: 1px solid #a8a29e;
+    margin-top: -6px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+  }
+  input[type=range]::-moz-range-track {
+    height: 4px;
+    background: #e7e5e4;
+    border-radius: 2px;
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: 1px solid #a8a29e;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+  }
+</style>
+</head>
+<body class="bg-white text-stone-900 font-mono antialiased">
+
+<div class="max-w-md mx-auto min-h-screen p-4 pb-24 flex flex-col">
+
+  <header class="flex justify-between items-center mb-6 pt-2 border-b border-stone-200 pb-3">
+    <h1 class="text-md font-black tracking-tighter">TALLY</h1>
+    <button onclick="toggleSettings()" class="text-stone-400 hover:text-stone-900 text-[10px] tracking-wider uppercase">Settings</button>
+  </header>
+
+  <div id="settings" class="hidden bg-stone-50 p-4 rounded-xl border border-stone-200 mb-6 flex flex-col gap-3 text-xs">
+    <div>
+      <label class="block mb-1 text-stone-500 text-[9px] uppercase">Gemini API Key</label>
+      <input type="password" id="geminiKey" class="w-full p-2 border border-stone-300 rounded text-xs">
+    </div>
+    <div>
+      <label class="block mb-1 text-stone-500 text-[9px] uppercase">Supabase URL</label>
+      <input type="text" id="sbUrl" class="w-full p-2 border border-stone-300 rounded text-xs">
+    </div>
+    <div>
+      <label class="block mb-1 text-stone-500 text-[9px] uppercase">Supabase Anon Key</label>
+      <input type="password" id="sbKey" class="w-full p-2 border border-stone-300 rounded text-xs">
+    </div>
+    <button onclick="saveSettings()" class="w-full bg-stone-900 text-white font-bold py-2 rounded text-[10px] uppercase tracking-wider">Save</button>
+    <p class="text-stone-400 text-[10px] leading-relaxed">Use the exact same three values on every device.</p>
+
+    <div class="border-t border-stone-200 pt-3 mt-1">
+      <button onclick="backfillNutrients()" id="backfillBtn" class="w-full bg-stone-200 text-stone-700 font-bold py-2 rounded text-[10px] uppercase tracking-wider">Backfill missing nutrient data</button>
+      <p class="text-stone-400 text-[10px] leading-relaxed mt-1">Re-checks older entries logged before fibre/vegetable/alcohol tracking existed and fills in what's missing. Uses one Gemini call per entry.</p>
+      <p id="backfillStatus" class="text-stone-500 text-[10px] mt-1"></p>
+    </div>
+  </div>
+
+  <div id="banner" class="hidden mb-4 p-3 rounded text-xs leading-relaxed"></div>
+
+  <!-- LOG TAB -->
+  <div id="view-log" class="flex flex-col gap-4">
+    <form onsubmit="addEntry(event)" class="flex flex-col gap-3">
+      <div class="flex justify-between items-center">
+        <span class="text-[10px] font-bold tracking-wider text-stone-400 uppercase">🥘 New Entry (food and exercise)</span>
+        <input type="date" id="entryDate" class="text-xs border border-stone-200 rounded px-2 py-0.5 bg-stone-50">
+      </div>
+      <textarea id="rawText" rows="4" placeholder="Type what you ate or did..."
+        class="w-full p-3 border border-stone-200 rounded-lg text-sm font-sans focus:outline-none focus:border-stone-900 resize-none"></textarea>
+
+      <label class="flex items-center justify-between text-[11px] text-stone-400 cursor-pointer">
+        <span id="photoLabel">📷 Attach a photo of the meal (optional)</span>
+        <input type="file" id="photoInput" accept="image/*" class="hidden" onchange="onPhotoChange()">
+      </label>
+      <img id="photoPreview" class="hidden w-full max-h-48 object-cover rounded-lg border border-stone-200">
+
+      <div class="flex items-center gap-2 text-[11px] text-stone-500">
+        <span class="w-20 shrink-0">Satisfaction</span>
+        <input type="range" min="1" max="5" value="3" id="satisfactionSlider" class="flex-1" oninput="document.getElementById('satisfactionVal').innerText = this.value">
+        <span id="satisfactionVal" class="w-3 shrink-0 text-right">3</span>
+      </div>
+      <button type="submit" id="submitBtn" class="bg-stone-900 text-white font-bold text-xs px-6 py-2.5 rounded uppercase tracking-wider">Add Entry</button>
+    </form>
+
+    <div id="nutrientOverview" class="hidden border border-stone-200 rounded-lg p-3 text-xs flex flex-col gap-1"></div>
+
+    <div id="saveKnownPrompt" class="hidden border border-stone-200 rounded-lg p-3 bg-stone-50 flex flex-col gap-2">
+      <span class="text-[10px] text-stone-500">Save this as a known food for next time?</span>
+      <input type="text" id="knownFoodName" class="w-full p-2 border border-stone-300 rounded text-xs">
+      <div class="flex gap-2">
+        <button onclick="confirmSaveKnownFood()" class="flex-1 bg-stone-900 text-white text-[10px] uppercase tracking-wider py-2 rounded">Save</button>
+        <button onclick="dismissSaveKnownPrompt()" class="flex-1 text-stone-400 text-[10px] uppercase tracking-wider py-2 rounded border border-stone-200">Skip</button>
+      </div>
+    </div>
+
+    <div class="border-t border-stone-100 pt-3 flex flex-col gap-3">
+      <button onclick="toggleCheckin()" class="text-[10px] font-bold text-stone-400 uppercase tracking-wider text-left">💭 Check-in</button>
+      <div id="checkinPanel" class="hidden flex flex-col gap-3">
+        <div class="flex justify-end">
+          <input type="date" id="checkinDate" class="text-xs border border-stone-200 rounded px-2 py-0.5 bg-stone-50">
+        </div>
+
+        <div class="flex items-center gap-2 text-[11px] text-stone-500">
+          <span class="w-14 shrink-0">Energy</span>
+          <input type="range" min="1" max="5" value="3" id="energySlider" class="flex-1" oninput="document.getElementById('energyVal').innerText = this.value">
+          <span id="energyVal" class="w-3 shrink-0 text-right">3</span>
+        </div>
+
+        <div class="flex items-center gap-2 text-[11px] text-stone-500">
+          <span class="w-14 shrink-0">Hunger</span>
+          <input type="range" min="1" max="5" value="3" id="hungerSlider" class="flex-1" oninput="document.getElementById('hungerVal').innerText = this.value">
+          <span id="hungerVal" class="w-3 shrink-0 text-right">3</span>
+        </div>
+
+        <div class="flex items-center gap-2 text-[11px] text-stone-500">
+          <span class="w-14 shrink-0">Sleep</span>
+          <input type="range" min="1" max="5" value="3" id="sleepSlider" class="flex-1" oninput="document.getElementById('sleepVal').innerText = this.value">
+          <span id="sleepVal" class="w-3 shrink-0 text-right">3</span>
+        </div>
+
+        <textarea id="checkinNote" rows="2" placeholder="Commentary (optional)"
+          class="w-full p-2 border border-stone-200 rounded-lg text-xs font-sans focus:outline-none focus:border-stone-900 resize-none"></textarea>
+
+        <label class="flex items-center gap-2 text-[11px] text-stone-400">
+          <input type="checkbox" id="checkinDayOverall">
+          This reflects my whole day, not just right now
+        </label>
+
+         <p class="text-[10px] text-stone-300 -mt-2">Note: Sleep refers to the night before this date.</p>
+
+
+        <button onclick="addCheckin()" id="checkinBtn" class="bg-stone-900 text-white font-bold text-xs px-6 py-2.5 rounded uppercase tracking-wider">Log Check-in</button>
+      </div>
+    </div>
+
+    <div class="border-t border-stone-100 pt-3">
+      <button onclick="toggleKnownFoods()" class="text-[10px] font-bold text-stone-400 uppercase tracking-wider">📚 Known Foods (<span id="knownFoodsCount">0</span>)</button>
+      <div id="knownFoodsPanel" class="hidden mt-2 flex flex-col gap-2">
+        <div id="knownFoodsList" class="flex flex-col gap-1 text-[11px] text-stone-500"></div>
+        <button onclick="toggleManualKnownForm()" class="text-[10px] text-stone-400 uppercase tracking-wider text-left">+ Add manually</button>
+        <div id="manualKnownForm" class="hidden flex flex-col gap-2 border border-stone-200 rounded-lg p-3">
+          <input type="text" id="mkName" placeholder="Name" class="w-full p-2 border border-stone-300 rounded text-xs">
+          <div class="flex gap-2">
+            <input type="number" id="mkCalories" placeholder="Calories" class="w-1/2 p-2 border border-stone-300 rounded text-xs">
+            <input type="number" id="mkProtein" placeholder="Protein (g)" class="w-1/2 p-2 border border-stone-300 rounded text-xs">
+          </div>
+          <input type="text" id="mkNotes" placeholder="Notes (optional) — e.g. portion details" class="w-full p-2 border border-stone-300 rounded text-xs">
+          <button onclick="addManualKnownFood()" class="bg-stone-900 text-white text-[10px] uppercase tracking-wider py-2 rounded">Save Known Food</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TRENDS TAB -->
+  <div id="view-trends" class="hidden flex flex-col gap-6">
+
+    <div>
+      <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">Today</h3>
+      <div class="grid grid-cols-3 gap-2 text-center">
+        <div class="border border-stone-200 p-2.5 rounded">
+          <div class="text-[9px] text-stone-400 uppercase">Calories in</div>
+          <div class="text-md font-black"><span id="todayCal">0</span></div>
+        </div>
+        <div class="border border-stone-200 p-2.5 rounded">
+          <div class="text-[9px] text-stone-400 uppercase">Protein in</div>
+          <div class="text-md font-black"><span id="todayProtein">0</span>g</div>
+        </div>
+        <div class="border border-stone-200 p-2.5 rounded">
+          <div class="text-[9px] text-stone-400 uppercase">Calories burned</div>
+          <div class="text-md font-black"><span id="todayBurned">0</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="flex justify-between items-center mb-2">
+        <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase">Calorie intake (<span id="chartRangeLabel">7 days</span>)</h3>
+        <div class="flex border border-stone-200 rounded overflow-hidden text-[10px]">
+          <button onclick="setTrendRange(7)" id="range7Btn" class="px-2 py-1 bg-stone-900 text-white">7D</button>
+          <button onclick="setTrendRange(30)" id="range30Btn" class="px-2 py-1 text-stone-400 bg-white">30D</button>
+        </div>
+      </div>
+      <div id="weekChart" class="flex flex-col gap-1.5"></div>
+    </div>
+
+    <div>
+      <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">Summary (<span id="trendRangeLabel">Last 7 days</span>)</h3>
+      <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-stone-600 leading-relaxed">
+        <div>Avg kcal: <span id="rangeAvgCal">—</span></div>
+        <div>Avg protein: <span id="rangeAvgProtein">—</span></div>
+        <div>Avg fibre: <span id="rangeAvgFibre">—</span></div>
+        <div>Alcohol: <span id="rangeAlcoholUnits">—</span></div>
+        <div>Avg energy: <span id="rangeAvgEnergy">—</span></div>
+        <div>Avg hunger: <span id="rangeAvgHunger">—</span></div>
+        <div>Avg sleep: <span id="rangeAvgSleep">—</span></div>
+        <div>Days logged: <span id="rangeDaysLogged">0</span></div>
+        <div>Fibre: <span id="rangeFibreQuality">—</span></div>
+        <div>Fruit & veg: <span id="rangePlantsQuality">—</span></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="flex justify-between items-center mb-2">
+        <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase">Patterns</h3>
+        <button onclick="generateInsights()" id="insightsBtn" class="text-[10px] uppercase tracking-wider bg-stone-900 text-white px-3 py-1.5 rounded">Analyze</button>
+      </div>
+      <div id="insightsBox" class="border border-stone-200 rounded-lg p-3 text-xs bg-stone-50 leading-relaxed text-stone-600">
+        Tap "Analyze" to look for patterns in your recent logs.
+      </div>
+    </div>
+
+    <div>
+      <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">Recent Entries</h3>
+      <div id="feed" class="flex flex-col gap-2">
+        <p class="text-xs text-stone-300 italic text-center py-6">No entries yet.</p>
+      </div>
+    </div>
+  </div>
+
+  <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-stone-200 py-3 px-6 max-w-md mx-auto flex justify-around items-center">
+    <button onclick="switchView('log')" id="nav-log" class="font-black text-xs uppercase tracking-widest border-b-2 pb-0.5 text-stone-900 border-stone-900">Log</button>
+    <button onclick="switchView('trends')" id="nav-trends" class="font-bold text-xs uppercase tracking-widest border-b-2 pb-0.5 text-stone-400 border-transparent">Trends</button>
+  </nav>
+</div>
+
+<script>
+  let supabaseClient = null;
+  let entries = [];
+  let knownFoods = [];
+  let checkins = [];
+  let lastParsed = null;
+  let pendingPhoto = null; // { base64, mimeType }
+
+  function todayStr() { return new Date().toISOString().split('T')[0]; }
+
+  let activeTrendDays = 7;
+
+  function numericOrNull(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function displayNumber(value, suffix = '') {
+    const n = numericOrNull(value);
+    return n === null ? '—' : Math.round(n) + suffix;
+  }
+
+  function sumKnown(list, key) {
+    const values = list.map(item => numericOrNull(item[key])).filter(value => value !== null);
+    if (values.length === 0) return null;
+    return values.reduce((sum, value) => sum + value, 0);
+  }
+
+  function avgKnown(list, key) {
+    const values = list.map(item => numericOrNull(item[key])).filter(value => value !== null);
+    if (values.length === 0) return null;
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
+  }
+
+  function qualityFromAverage(value, thresholds) {
+    if (value === null) return '—';
+    if (value >= thresholds.high) return 'High';
+    if (value >= thresholds.moderate) return 'Moderate';
+    return 'Low';
+  }
+
+
+  // Flip to false for words-only badges, no code restructuring needed.
+  const USE_EMOJI_BADGES = true;
+  const BADGE_EMOJI = {
+    protein: '🥩', fibre: '🌾', vegetables: '🥦', fruit: '🍎',
+    healthy_fats: '🥑', whole_foods: '🌱', processed: '🏭', satiety: '🤤'
+  };
+  function badgeLabel(key, text) {
+    return (USE_EMOJI_BADGES ? BADGE_EMOJI[key] + ' ' : '') + text;
+  }
+
+  function nutrientBadges(e) {
+    const badges = [];
+    if (e.protein_quality) badges.push([badgeLabel('protein', 'Protein'), e.protein_quality]);
+    if (e.fibre_quality) badges.push([badgeLabel('fibre', 'Fibre'), e.fibre_quality]);
+    if (e.vegetable_servings != null) badges.push([badgeLabel('vegetables', 'Vegetables'), e.vegetable_servings + ' serving' + (e.vegetable_servings == 1 ? '' : 's')]);
+    if (e.fruit_servings != null) badges.push([badgeLabel('fruit', 'Fruit'), e.fruit_servings + ' serving' + (e.fruit_servings == 1 ? '' : 's')]);
+    if (e.healthy_fats_quality) badges.push([badgeLabel('healthy_fats', 'Healthy fats'), e.healthy_fats_quality]);
+    if (e.whole_foods_pct != null) badges.push([badgeLabel('whole_foods', 'Whole foods'), e.whole_foods_pct + '%']);
+    if (e.processed_level) badges.push([badgeLabel('processed', 'Processed'), e.processed_level]);
+    if (e.satiety_quality) badges.push([badgeLabel('satiety', 'Satiety'), e.satiety_quality]);
+    return badges;
+  }
+
+  function showNutrientOverview(parsed) {
+    const box = document.getElementById('nutrientOverview');
+    const badges = nutrientBadges({
+      protein_quality: parsed.protein_quality, fibre_quality: parsed.fibre_quality,
+      vegetable_servings: parsed.vegetable_servings, fruit_servings: parsed.fruit_servings,
+      healthy_fats_quality: parsed.healthy_fats_quality, whole_foods_pct: parsed.whole_foods_pct,
+      processed_level: parsed.processed_level, satiety_quality: parsed.satiety_quality
+    });
+    if (badges.length === 0) { box.classList.add('hidden'); return; }
+    box.innerHTML = badges.map(([label, val]) => `<div class="flex justify-between"><span class="text-stone-500">${label}</span><span class="font-bold text-stone-800">${val}</span></div>`).join('');
+    box.classList.remove('hidden');
+  }
+
+  function showBanner(msg, kind) {
+    const b = document.getElementById('banner');
+    b.classList.remove('hidden', 'bg-red-50', 'text-red-700', 'border', 'border-red-200', 'bg-amber-50', 'text-amber-700', 'border-amber-200');
+    b.classList.add(...(kind === 'error' ? ['bg-red-50', 'text-red-700', 'border', 'border-red-200'] : ['bg-amber-50', 'text-amber-700', 'border', 'border-amber-200']));
+    b.innerText = msg;
+  }
+  function clearBanner() { document.getElementById('banner').classList.add('hidden'); }
+
+  function toggleSettings() { document.getElementById('settings').classList.toggle('hidden'); }
+
+  function switchView(target) {
+    document.getElementById('view-log').classList.toggle('hidden', target !== 'log');
+    document.getElementById('view-trends').classList.toggle('hidden', target !== 'trends');
+    document.getElementById('nav-log').className = 'font-black text-xs uppercase tracking-widest border-b-2 pb-0.5 ' + (target === 'log' ? 'text-stone-900 border-stone-900' : 'text-stone-400 border-transparent');
+    document.getElementById('nav-trends').className = 'font-bold text-xs uppercase tracking-widest border-b-2 pb-0.5 ' + (target === 'trends' ? 'text-stone-900 border-stone-900' : 'text-stone-400 border-transparent');
+    if (target === 'trends') render();
+  }
+
+  function setTrendRange(days) {
+    activeTrendDays = days;
+    document.getElementById('range7Btn').className = 'px-2 py-1 ' + (days === 7 ? 'bg-stone-900 text-white' : 'text-stone-400 bg-white');
+    document.getElementById('range30Btn').className = 'px-2 py-1 ' + (days === 30 ? 'bg-stone-900 text-white' : 'text-stone-400 bg-white');
+    render();
+  }
+
+  function loadSettingsIntoForm() {
+    document.getElementById('geminiKey').value = localStorage.getItem('gemini_key') || '';
+    document.getElementById('sbUrl').value = localStorage.getItem('sb_url') || '';
+    document.getElementById('sbKey').value = localStorage.getItem('sb_key') || '';
+  }
+
+  function saveSettings() {
+    localStorage.setItem('gemini_key', document.getElementById('geminiKey').value.trim());
+    localStorage.setItem('sb_url', document.getElementById('sbUrl').value.trim());
+    localStorage.setItem('sb_key', document.getElementById('sbKey').value.trim());
+    toggleSettings();
+    initSupabase();
+  }
+
+  function initSupabase() {
+    const url = localStorage.getItem('sb_url');
+    const key = localStorage.getItem('sb_key');
+    if (url && key) {
+      try {
+        supabaseClient = supabase.createClient(url, key);
+        fetchEntries();
+        fetchKnownFoods();
+        fetchCheckins();
+      } catch (err) {
+        showBanner('Could not connect to Supabase: ' + err.message, 'error');
+      }
+    } else {
+      showBanner('Open Settings and add your Supabase URL + key to start saving entries.', 'warn');
+    }
+  }
+
+  async function fetchEntries() {
+    if (!supabaseClient) return;
+    const { data, error } = await supabaseClient
+      .from('entries')
+      .select('*')
+      .order('entry_date', { ascending: false })
+      .order('created_at', { ascending: false });
+
+    if (error) { showBanner('Could not load entries: ' + error.message, 'error'); return; }
+    clearBanner();
+    entries = data || [];
+    render();
+  }
+
+  async function fetchKnownFoods() {
+    if (!supabaseClient) return;
+    const { data, error } = await supabaseClient.from('known_foods').select('*').order('name', { ascending: true });
+    if (error) { showBanner('Could not load known foods: ' + error.message, 'error'); return; }
+    knownFoods = data || [];
+    renderKnownFoods();
+  }
+
+  function toggleKnownFoods() { document.getElementById('knownFoodsPanel').classList.toggle('hidden'); }
+  function toggleManualKnownForm() { document.getElementById('manualKnownForm').classList.toggle('hidden'); }
+  function toggleCheckin() { document.getElementById('checkinPanel').classList.toggle('hidden'); }
+
+  async function fetchCheckins() {
+    if (!supabaseClient) return;
+    const { data, error } = await supabaseClient
+      .from('checkins')
+      .select('*')
+      .order('entry_date', { ascending: false })
+      .order('created_at', { ascending: false });
+    if (error) { showBanner('Could not load check-ins: ' + error.message, 'error'); return; }
+    checkins = data || [];
+    render();
+  }
+
+  async function addCheckin() {
+    if (!supabaseClient) { showBanner('Add your Supabase URL + key in Settings first.', 'error'); return; }
+    const btn = document.getElementById('checkinBtn');
+    const energy = Number(document.getElementById('energySlider').value);
+    const hunger = Number(document.getElementById('hungerSlider').value);
+    const sleep = Number(document.getElementById('sleepSlider').value);
+    const note = document.getElementById('checkinNote').value.trim();
+    const scope = document.getElementById('checkinDayOverall').checked ? 'day_overall' : 'moment';
+
+    btn.disabled = true;
+    btn.innerText = 'SAVING...';
+    try {
+      const { error } = await supabaseClient.from('checkins').insert({
+        entry_date: document.getElementById('checkinDate').value || todayStr(),
+        scope, energy, hunger, sleep,
+        note: note || null
+      });
+      if (error) throw new Error('Could not save check-in: ' + error.message);
+
+      document.getElementById('checkinNote').value = '';
+      document.getElementById('checkinDayOverall').checked = false;
+      document.getElementById('checkinDate').value = todayStr();
+      document.getElementById('energySlider').value = 3;
+      document.getElementById('hungerSlider').value = 3;
+      document.getElementById('sleepSlider').value = 3;
+      document.getElementById('energyVal').innerText = 3;
+      document.getElementById('hungerVal').innerText = 3;
+      document.getElementById('sleepVal').innerText = 3;
+
+      await fetchCheckins();
+      showBanner('Check-in logged.', 'warn');
+    } catch (err) {
+      showBanner(err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerText = 'LOG CHECK-IN';
+    }
+  }
+
+  function renderKnownFoods() {
+    document.getElementById('knownFoodsCount').innerText = knownFoods.length;
+    const list = document.getElementById('knownFoodsList');
+    if (knownFoods.length === 0) {
+      list.innerHTML = '<p class="italic text-stone-300">No known foods saved yet.</p>';
+      return;
+    }
+    list.innerHTML = knownFoods.map(f => `
+      <div class="border-b border-stone-100 py-1">${f.name}</div>`).join('');
+  }
+
+  async function addManualKnownFood() {
+    const name = document.getElementById('mkName').value.trim();
+    const calories = Number(document.getElementById('mkCalories').value) || 0;
+    const protein = Number(document.getElementById('mkProtein').value) || 0;
+    const notes = document.getElementById('mkNotes').value.trim();
+    if (!name) { showBanner('Give the known food a name first.', 'error'); return; }
+    if (!supabaseClient) return;
+
+    const { error } = await supabaseClient.from('known_foods').insert({ name, calories, protein, notes });
+    if (error) { showBanner('Could not save known food: ' + error.message, 'error'); return; }
+
+    document.getElementById('mkName').value = '';
+    document.getElementById('mkCalories').value = '';
+    document.getElementById('mkProtein').value = '';
+    document.getElementById('mkNotes').value = '';
+    await fetchKnownFoods();
+    showBanner('Saved "' + name + '" as a known food.', 'warn');
+  }
+
+  function dismissSaveKnownPrompt() {
+    document.getElementById('saveKnownPrompt').classList.add('hidden');
+    lastParsed = null;
+  }
+
+  async function confirmSaveKnownFood() {
+    const name = document.getElementById('knownFoodName').value.trim();
+    if (!name || !lastParsed || !supabaseClient) return;
+    const { error } = await supabaseClient.from('known_foods').insert({
+      name,
+      calories: lastParsed.calories,
+      protein: lastParsed.protein,
+      notes: lastParsed.notes || null
+    });
+    if (error) { showBanner('Could not save known food: ' + error.message, 'error'); return; }
+    dismissSaveKnownPrompt();
+    await fetchKnownFoods();
+    showBanner('Saved "' + name + '" as a known food.', 'warn');
+  }
+
+  function onPhotoChange() {
+    const input = document.getElementById('photoInput');
+    const label = document.getElementById('photoLabel');
+    const preview = document.getElementById('photoPreview');
+    const file = input.files[0];
+    if (!file) { pendingPhoto = null; preview.classList.add('hidden'); label.innerText = '📷 Attach a photo of the meal (optional)'; return; }
+
+    label.innerText = '📷 ' + file.name;
+    preview.src = URL.createObjectURL(file);
+    preview.classList.remove('hidden');
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      pendingPhoto = { base64: reader.result.split(',')[1], mimeType: file.type };
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function clearPhoto() {
+    pendingPhoto = null;
+    document.getElementById('photoInput').value = '';
+    document.getElementById('photoPreview').classList.add('hidden');
+    document.getElementById('photoLabel').innerText = '📷 Attach a photo of the meal (optional)';
+  }
+
+  const PRIMARY_MODEL = 'gemini-2.5-flash-lite';
+
+  // Uses Flash Lite by default and makes only one retry on temporary overload/network failure.
+  // 429 quota/rate-limit errors are not retried because they burn requests without fixing anything.
+  async function callGeminiWithRetry(body) {
+    const plan = [
+      [PRIMARY_MODEL, 0],
+      [PRIMARY_MODEL, 1500],
+    ];
+    const apiKey = localStorage.getItem('gemini_key');
+    let lastErr = null;
+
+    for (const [model, delay] of plan) {
+      if (delay) await new Promise(r => setTimeout(r, delay));
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      let response;
+      try {
+        response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+      } catch (networkErr) {
+        lastErr = new Error('Network error: ' + networkErr.message);
+        continue;
+      }
+      if (response.ok) return response;
+      if (response.status === 429) {
+        const errBody = await response.text();
+        throw new Error(`Gemini quota/rate limit reached (HTTP 429): ${errBody.slice(0, 200)}`);
+      }
+      if (response.status === 503) {
+        lastErr = new Error(`${model} is temporarily overloaded (HTTP 503)`);
+        continue;
+      }
+      const errBody = await response.text();
+      throw new Error(`Gemini error (HTTP ${response.status}): ${errBody.slice(0, 200)}`);
+    }
+    throw lastErr || new Error('Gemini request failed after one retry.');
+  }
+
+  async function callGemini(text, photo) {
+    const knownFoodsList = knownFoods.length
+      ? knownFoods.map(f => `- "${f.name}": ${f.calories} kcal, ${f.protein}g protein${f.notes ? ' (' + f.notes + ')' : ''}`).join('\n')
+      : null;
+
+    const promptText = `Parse this food/activity log into JSON.
+
+Rules:
+- If exact amounts aren't given, estimate on the higher side for calories and portion sizes rather than underestimating — the user is tracking to lose weight and prefers to overcount intake when unsure.
+- If a photo is attached, identify the food and estimate realistic portion sizes from it, combined with any text given.
+- If any alcoholic drinks are mentioned, estimate alcohol_units using standard UK alcohol units (1 unit = 10ml/8g pure alcohol) based on typical drink size and ABV — e.g. a standard 175ml glass of wine (~12% ABV) is about 2.1 units, a pint of regular beer (~4-5% ABV) is about 2-2.3 units, a single 25ml spirit shot (~40% ABV) is about 1 unit. Estimate generously on the higher side if exact size/strength isn't given. 0 if no alcohol is mentioned.
+- Keep the summary short and plain.
+- Also assess the meal's nutritional quality (skip/zero these if the log isn't food, e.g. it's exercise or a check-in note):
+  - fibre_grams: estimated grams of fibre (number)
+  - protein_quality / fibre_quality / healthy_fats_quality / satiety_quality: one of "Low", "Moderate", "High", "Excellent"
+  - vegetable_servings / fruit_servings: estimated servings (number, can be 0)
+  - processed_level: one of "Low", "Moderate", "High" (how processed/refined the food is — lower is better)
+  - whole_foods_pct: rough % of the meal that's whole/minimally processed food (0-100)
+  - satisfaction_note: if the raw text mentions enjoyment, fullness, cravings, whether it felt worth it, or how satisfying it was, extract a short phrase; otherwise null
+${knownFoodsList ? `\nThis person has a list of previously saved "known foods" with verified nutrition values:\n${knownFoodsList}\n\nIf the log clearly refers to one of these (exact match or close variant, e.g. same brand/dish), use its saved calories/protein values exactly, scaling proportionally if a different portion is mentioned (e.g. "half" = divide by 2). Only use a known food's numbers if you're confident it's the same item — otherwise estimate fresh as usual.` : ''}
+
+Return ONLY this JSON shape, no other text:
+{"summary": "short clean one-line description", "calories": null, "protein": null, "exercise_calories": null, "alcohol_units": null, "fibre_grams": null, "protein_quality": "Moderate", "fibre_quality": "Moderate", "vegetable_servings": null, "fruit_servings": null, "healthy_fats_quality": "Moderate", "processed_level": "Moderate", "whole_foods_pct": 50, "satiety_quality": "Moderate", "satisfaction_note": null}
+
+Text log: "${text || '(none — see photo)'}"`;
+
+    const parts = [{ text: promptText }];
+    if (photo) parts.push({ inlineData: { mimeType: photo.mimeType, data: photo.base64 } });
+
+    const body = JSON.stringify({
+      contents: [{ parts }],
+      generationConfig: { responseMimeType: "application/json" }
+    });
+
+    const response = await callGeminiWithRetry(body);
+    const data = await response.json();
+    return JSON.parse(data.candidates[0].content.parts[0].text);
+  }
+
+  async function backfillNutrients() {
+    if (!supabaseClient) { showBanner('Add your Supabase URL + key in Settings first.', 'error'); return; }
+    if (!localStorage.getItem('gemini_key')) { showBanner('Add your Gemini API key in Settings first.', 'error'); return; }
+
+    const btn = document.getElementById('backfillBtn');
+    const status = document.getElementById('backfillStatus');
+    const missing = entries.filter(e => e.raw_text && (
+      e.calories == null ||
+      e.protein == null ||
+      e.exercise_calories == null ||
+      e.alcohol_units == null ||
+      e.fibre_grams == null ||
+      e.protein_quality == null ||
+      e.fibre_quality == null ||
+      e.vegetable_servings == null ||
+      e.fruit_servings == null ||
+      e.healthy_fats_quality == null ||
+      e.processed_level == null ||
+      e.whole_foods_pct == null ||
+      e.satiety_quality == null
+    ));
+
+    if (missing.length === 0) { status.innerText = 'Nothing to backfill — every entry already has this data.'; return; }
+
+    btn.disabled = true;
+    let done = 0;
+    let failed = 0;
+
+    for (const entry of missing) {
+      status.innerText = `Processing ${done + 1} of ${missing.length}...`;
+      try {
+        const parsed = await callGemini(entry.raw_text, null);
+
+        const updates = {
+          summary: entry.summary || parsed.summary || entry.raw_text,
+          calories: entry.calories == null ? (numericOrNull(parsed.calories) === null ? null : Math.round(Number(parsed.calories))) : entry.calories,
+          protein: entry.protein == null ? (numericOrNull(parsed.protein) === null ? null : Math.round(Number(parsed.protein))) : entry.protein,
+          exercise_calories: entry.exercise_calories == null ? (numericOrNull(parsed.exercise_calories) === null ? null : Math.round(Number(parsed.exercise_calories))) : entry.exercise_calories,
+          alcohol_units: entry.alcohol_units == null ? numericOrNull(parsed.alcohol_units) : entry.alcohol_units,
+          fibre_grams: entry.fibre_grams == null ? numericOrNull(parsed.fibre_grams) : entry.fibre_grams,
+          protein_quality: entry.protein_quality || parsed.protein_quality || null,
+          fibre_quality: entry.fibre_quality || parsed.fibre_quality || null,
+          vegetable_servings: entry.vegetable_servings == null ? numericOrNull(parsed.vegetable_servings) : entry.vegetable_servings,
+          fruit_servings: entry.fruit_servings == null ? numericOrNull(parsed.fruit_servings) : entry.fruit_servings,
+          healthy_fats_quality: entry.healthy_fats_quality || parsed.healthy_fats_quality || null,
+          processed_level: entry.processed_level || parsed.processed_level || null,
+          whole_foods_pct: entry.whole_foods_pct == null && parsed.whole_foods_pct != null ? Math.round(Number(parsed.whole_foods_pct)) : entry.whole_foods_pct,
+          satiety_quality: entry.satiety_quality || parsed.satiety_quality || null,
+          satisfaction_note: entry.satisfaction_note || parsed.satisfaction_note || null
+        };
+
+        const { error } = await supabaseClient.from('entries').update(updates).eq('id', entry.id);
+        if (error) throw new Error(error.message);
+
+        done++;
+      } catch (err) {
+        failed++;
+        if (String(err.message || '').includes('429')) break;
+      }
+    }
+
+    status.innerText = `Done: updated ${done}${failed ? ` (${failed} failed — quota/rate limit may have stopped the backlog)` : ''}`;
+    btn.disabled = false;
+    await fetchEntries();
+  }
+
+  async function addEntry(e) {
+    e.preventDefault();
+    clearBanner();
+    const txtEl = document.getElementById('rawText');
+    const dateEl = document.getElementById('entryDate');
+    const btn = document.getElementById('submitBtn');
+    const text = txtEl.value.trim();
+
+    if (!text && !pendingPhoto) { showBanner('Type something or attach a photo first.', 'error'); return; }
+    if (!supabaseClient) { showBanner('Add your Supabase URL + key in Settings first.', 'error'); return; }
+
+    btn.disabled = true;
+    btn.innerText = 'SAVING...';
+
+    let parsed = null;
+    let aiFailed = false;
+
+    if (localStorage.getItem('gemini_key')) {
+      try {
+        parsed = await callGemini(text, pendingPhoto);
+      } catch (err) {
+        aiFailed = true;
+        showBanner('AI unavailable. Saved raw entry for backfill later: ' + err.message, 'warn');
+      }
+    } else {
+      aiFailed = true;
+      showBanner('No Gemini key. Saved raw entry for backfill later.', 'warn');
+    }
+
+    const satisfactionLevel = Number(document.getElementById('satisfactionSlider').value);
+    const summary = parsed?.summary || text || '(photo only — needs analysis)';
+
+    try {
+      const { error } = await supabaseClient.from('entries').insert({
+        entry_date: dateEl.value || todayStr(),
+        raw_text: text || '(photo only)',
+        summary,
+        calories: parsed ? (numericOrNull(parsed.calories) === null ? null : Math.round(Number(parsed.calories))) : null,
+        protein: parsed ? (numericOrNull(parsed.protein) === null ? null : Math.round(Number(parsed.protein))) : null,
+        exercise_calories: parsed ? (numericOrNull(parsed.exercise_calories) === null ? null : Math.round(Number(parsed.exercise_calories))) : null,
+        alcohol_units: parsed ? numericOrNull(parsed.alcohol_units) : null,
+        fibre_grams: parsed ? numericOrNull(parsed.fibre_grams) : null,
+        protein_quality: parsed?.protein_quality || null,
+        fibre_quality: parsed?.fibre_quality || null,
+        vegetable_servings: parsed ? numericOrNull(parsed.vegetable_servings) : null,
+        fruit_servings: parsed ? numericOrNull(parsed.fruit_servings) : null,
+        healthy_fats_quality: parsed?.healthy_fats_quality || null,
+        processed_level: parsed?.processed_level || null,
+        whole_foods_pct: parsed?.whole_foods_pct != null ? Math.round(Number(parsed.whole_foods_pct)) : null,
+        satiety_quality: parsed?.satiety_quality || null,
+        satisfaction_note: parsed?.satisfaction_note || null,
+        satisfaction_level: satisfactionLevel,
+      });
+      if (error) throw new Error('Supabase insert failed: ' + error.message);
+
+      txtEl.value = '';
+      clearPhoto();
+      dateEl.value = todayStr();
+      document.getElementById('satisfactionSlider').value = 3;
+      document.getElementById('satisfactionVal').innerText = 3;
+      await fetchEntries();
+
+      if (!aiFailed && parsed) {
+        showBanner('Saved: ' + summary, 'warn');
+        showNutrientOverview(parsed);
+        lastParsed = parsed;
+        document.getElementById('knownFoodName').value = summary;
+        document.getElementById('saveKnownPrompt').classList.remove('hidden');
+      }
+
+    } catch (err) {
+      showBanner(err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerText = 'ADD ENTRY';
+    }
+  }
+
+  async function deleteEntry(id) {
+    if (!supabaseClient) return;
+    const { error } = await supabaseClient.from('entries').delete().eq('id', id);
+    if (error) { showBanner('Could not delete: ' + error.message, 'error'); return; }
+    await fetchEntries();
+  }
+
+  function dateNDaysAgo(n) {
+    const d = new Date();
+    d.setDate(d.getDate() - n);
+    return d.toISOString().split('T')[0];
+  }
+
+  function render() {
+    const today = todayStr();
+
+    // Today's totals
+    const todays = entries.filter(e => e.entry_date === today);
+    document.getElementById('todayCal').innerText = displayNumber(sumKnown(todays, 'calories'));
+    document.getElementById('todayProtein').innerText = displayNumber(sumKnown(todays, 'protein'));
+    document.getElementById('todayBurned').innerText = displayNumber(sumKnown(todays, 'exercise_calories'));
+
+    // Active range chart and summary
+    const days = Array.from({ length: activeTrendDays }, (_, i) => dateNDaysAgo(activeTrendDays - 1 - i));
+    const dayTotals = days.map(d => {
+      const dayEntries = entries.filter(e => e.entry_date === d);
+      return sumKnown(dayEntries, 'calories');
+    });
+    const knownDayTotals = dayTotals.filter(c => c !== null);
+    const maxCal = Math.max(...knownDayTotals, 1);
+
+    document.getElementById('chartRangeLabel').innerText = activeTrendDays + ' days';
+    document.getElementById('trendRangeLabel').innerText = 'Last ' + activeTrendDays + ' days';
+
+    document.getElementById('weekChart').innerHTML = days.map((d, i) => {
+      const label = activeTrendDays === 7
+        ? new Date(d).toLocaleDateString(undefined, { weekday: 'short' })
+        : new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      const value = dayTotals[i];
+      const pct = value === null ? 0 : Math.round((value / maxCal) * 100);
+      return `
+        <div class="flex items-center gap-2 text-[10px]">
+          <span class="w-10 text-stone-400">${label}</span>
+          <div class="flex-1 bg-stone-100 rounded h-3 overflow-hidden"><div class="bg-stone-800 h-3" style="width:${pct}%"></div></div>
+          <span class="w-10 text-right text-stone-500">${value === null ? '—' : Math.round(value)}</span>
+        </div>`;
+    }).join('');
+
+    const rangeEntries = entries.filter(e => days.includes(e.entry_date));
+    const rangeCheckins = checkins.filter(c => days.includes(c.entry_date));
+    const daysLogged = new Set(rangeEntries.map(e => e.entry_date)).size;
+    const daysWithKnownCalories = days.filter(d => sumKnown(entries.filter(e => e.entry_date === d), 'calories') !== null).length || 0;
+
+    const avgCal = daysWithKnownCalories
+      ? knownDayTotals.reduce((a, b) => a + b, 0) / daysWithKnownCalories
+      : null;
+
+    const proteinTotals = days.map(d => sumKnown(entries.filter(e => e.entry_date === d), 'protein')).filter(v => v !== null);
+    const fibreTotals = days.map(d => sumKnown(entries.filter(e => e.entry_date === d), 'fibre_grams')).filter(v => v !== null);
+
+    const avgProtein = proteinTotals.length ? proteinTotals.reduce((a, b) => a + b, 0) / proteinTotals.length : null;
+    const avgFibre = fibreTotals.length ? fibreTotals.reduce((a, b) => a + b, 0) / fibreTotals.length : null;
+    const avgEnergy = avgKnown(rangeCheckins, 'energy');
+    const avgHunger = avgKnown(rangeCheckins, 'hunger');
+    const avgSleep = avgKnown(rangeCheckins, 'sleep');
+    const alcoholTotal = sumKnown(rangeEntries, 'alcohol_units');
+    const avgPlants = rangeEntries.length
+      ? rangeEntries.reduce((s, e) => s + (numericOrNull(e.vegetable_servings) || 0) + (numericOrNull(e.fruit_servings) || 0), 0) / Math.max(daysLogged, 1)
+      : null;
+
+    document.getElementById('rangeAvgCal').innerText = avgCal === null ? '—' : Math.round(avgCal);
+    document.getElementById('rangeAvgProtein').innerText = avgProtein === null ? '—' : Math.round(avgProtein) + 'g';
+    document.getElementById('rangeAvgFibre').innerText = avgFibre === null ? '—' : Math.round(avgFibre) + 'g';
+    document.getElementById('rangeAvgEnergy').innerText = avgEnergy === null ? '—' : avgEnergy.toFixed(1) + '/5';
+    document.getElementById('rangeAvgHunger').innerText = avgHunger === null ? '—' : avgHunger.toFixed(1) + '/5';
+    document.getElementById('rangeAvgSleep').innerText = avgSleep === null ? '—' : avgSleep.toFixed(1) + '/5';
+    document.getElementById('rangeDaysLogged').innerText = daysLogged + '/' + activeTrendDays;
+    document.getElementById('rangeAlcoholUnits').innerText = alcoholTotal === null ? '—' : alcoholTotal.toFixed(1).replace(/\.0$/, '') + ' units';
+    document.getElementById('rangeFibreQuality').innerText = qualityFromAverage(avgFibre, { moderate: 20, high: 28 });
+    document.getElementById('rangePlantsQuality').innerText = qualityFromAverage(avgPlants, { moderate: 3, high: 5 });
+
+    // Feed (entries + check-ins merged, newest first)
+    const feed = document.getElementById('feed');
+    const feedItems = [
+      ...entries.map(e => ({ type: 'entry', date: e.entry_date, created_at: e.created_at, data: e })),
+      ...checkins.map(c => ({ type: 'checkin', date: c.entry_date, created_at: c.created_at, data: c }))
+    ].sort((a, b) => (b.date + b.created_at).localeCompare(a.date + a.created_at));
+
+    const totalCount = feedItems.length;
+    const FEED_LIMIT = 25;
+    const visibleItems = feedItems.slice(0, FEED_LIMIT);
+
+    if (visibleItems.length === 0) {
+      feed.innerHTML = '<p class="text-xs text-stone-300 italic text-center py-6">No entries yet.</p>';
+      return;
+    }
+    feed.innerHTML = visibleItems.map(item => {
+      const dateLabel = new Date(item.date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      if (item.type === 'checkin') {
+        const c = item.data;
+        const scopeLabel = c.scope === 'day_overall' ? 'Whole day' : 'In the moment';
+        return `
+          <div class="border border-stone-200 bg-stone-50 p-3 rounded text-xs space-y-1">
+            <div class="flex justify-between items-start gap-2">
+              <span class="font-sans text-stone-700">💭 Energy ${c.energy}/5 · Hunger ${c.hunger}/5${c.sleep != null ? ' · 😴 ' + c.sleep + '/5' : ''}</span>
+              <button onclick="deleteCheckin('${c.id}')" class="text-stone-300 hover:text-red-500 text-[10px] shrink-0">✕</button>
+            </div>
+            ${c.note ? `<div class="font-sans text-stone-500 italic">${c.note}</div>` : ''}
+            <div class="text-[10px] text-stone-400">${dateLabel} · ${scopeLabel}</div>
+          </div>`;
+      }
+      const e = item.data;
+      const metrics = [
+        displayNumber(e.calories, ' kcal'),
+        displayNumber(e.protein, 'g protein')
+      ];
+      if (numericOrNull(e.fibre_grams) !== null) metrics.push(displayNumber(e.fibre_grams, 'g fibre'));
+      if (numericOrNull(e.satisfaction_level) !== null) metrics.push('satisfaction ' + e.satisfaction_level + '/5');
+      if (numericOrNull(e.exercise_calories) !== null && Number(e.exercise_calories) !== 0) metrics.push(displayNumber(e.exercise_calories, ' burned'));
+      if (numericOrNull(e.alcohol_units) !== null && Number(e.alcohol_units) !== 0) metrics.push(e.alcohol_units + ' alcohol units');
+
+      return `
+        <div class="border border-stone-200 p-3 rounded text-xs space-y-1.5">
+          <div class="flex justify-between items-start gap-2">
+            <span class="font-sans text-stone-900">${e.summary || e.raw_text}</span>
+            <button onclick="deleteEntry('${e.id}')" class="text-stone-300 hover:text-red-500 text-[10px] shrink-0">✕</button>
+          </div>
+          ${e.satisfaction_note ? `<div class="font-sans text-stone-500 italic">${e.satisfaction_note}</div>` : ''}
+          <div class="flex justify-between text-[10px] text-stone-400">
+            <span>${dateLabel}</span>
+            <span>${metrics.join(' · ')}</span>
+          </div>
+        </div>`;
+    }).join('') + (totalCount > FEED_LIMIT ? `<p class="text-[10px] text-stone-300 text-center pt-2">Showing most recent ${FEED_LIMIT} of ${totalCount} — older entries are still saved.</p>` : '');
+  }
+
+  async function deleteCheckin(id) {
+    if (!supabaseClient) return;
+    const { error } = await supabaseClient.from('checkins').delete().eq('id', id);
+    if (error) { showBanner('Could not delete: ' + error.message, 'error'); return; }
+    await fetchCheckins();
+  }
+
+  async function generateInsights() {
+    const box = document.getElementById('insightsBox');
+    const btn = document.getElementById('insightsBtn');
+    if (!localStorage.getItem('gemini_key')) { box.innerText = 'Add your Gemini API key in Settings first.'; return; }
+
+    const cutoff = dateNDaysAgo(30);
+    const recent = entries.filter(e => e.entry_date >= cutoff)
+      .map(e => ({ date: e.entry_date, summary: e.summary, calories: e.calories, protein: e.protein, exercise_calories: e.exercise_calories, alcohol_units: e.alcohol_units, fibre_grams: e.fibre_grams, vegetable_servings: e.vegetable_servings, processed_level: e.processed_level, satiety_quality: e.satiety_quality, satisfaction_level: e.satisfaction_level, satisfaction_note: e.satisfaction_note }));
+    const recentCheckins = checkins.filter(c => c.entry_date >= cutoff)
+      .map(c => ({ date: c.entry_date, scope: c.scope, energy: c.energy, hunger: c.hunger, sleep: c.sleep, note: c.note }));
+
+    if (recent.length < 3 && recentCheckins.length < 3) { box.innerText = 'Log a few more days before patterns become meaningful.'; return; }
+
+    btn.disabled = true;
+    btn.innerText = 'ANALYZING...';
+    try {
+      const prompt = `Here are someone's last 30 days of food/exercise logs as JSON: ${JSON.stringify(recent)}.
+And their energy/hunger/sleep check-ins (1-5 scale, "moment" = a snapshot at some point in the day, "day_overall" = their summary of the whole day, sleep refers to the night before that date) as JSON: ${JSON.stringify(recentCheckins)}.
+
+Find 2-4 real, specific patterns or correlations — especially ones linking how they felt (energy/hunger/sleep) to what they ate, exercised, or noted (e.g. "energy tends to be higher on days you exercised the day before", "low energy often follows light-protein dinners", "hunger spikes on days with a skipped or small breakfast", "sleep tends to be worse after high-alcohol days", "you report feeling sluggish after meals heavy in processed food"). Also look at satisfaction_note for whether higher-calorie or indulgent meals were rated worth it vs not. Also include food-only patterns if relevant (e.g. low protein after exercise days, which meals contribute most calories, fibre intake variability, weekday vs weekend differences). Be direct and practical, like a friend pointing something out — not clinical, not vague. If nothing meaningful stands out, say so plainly instead of inventing patterns.
+Return ONLY a JSON array of short strings, each under 18 words, no other text.`;
+
+      const body = JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } });
+      const res = await callGeminiWithRetry(body);
+      const data = await res.json();
+      const insights = JSON.parse(data.candidates[0].content.parts[0].text);
+      box.innerHTML = '<ul class="list-disc pl-4 space-y-1.5">' + insights.map(i => `<li>${i}</li>`).join('') + '</ul>';
+    } catch (err) {
+      box.innerText = 'Could not generate insights: ' + err.message;
+    } finally {
+      btn.disabled = false;
+      btn.innerText = 'ANALYZE';
+    }
+  }
+
+  document.getElementById('entryDate').value = todayStr();
+  document.getElementById('checkinDate').value = todayStr();
+  loadSettingsIntoForm();
+  initSupabase();
+</script>
+</body>
+</html>
