@@ -87,7 +87,7 @@
         <span class="text-[10px] font-bold tracking-wider text-stone-400 uppercase">🥘 New Entry (food and exercise)</span>
         <input type="date" id="entryDate" class="text-xs border border-stone-200 rounded px-2 py-0.5 bg-stone-50">
       </div>
-      <textarea id="rawText" rows="4" placeholder="Type what you ate or did... e.g. Skyr with raspberries, 30 min run"
+      <textarea id="rawText" rows="4" placeholder="Type what you ate or did..."
         class="w-full p-3 border border-stone-200 rounded-lg text-sm font-sans focus:outline-none focus:border-stone-900 resize-none"></textarea>
 
       <label class="flex items-center justify-between text-[11px] text-stone-400 cursor-pointer">
@@ -101,9 +101,6 @@
         <input type="range" min="1" max="5" value="3" id="satisfactionSlider" class="flex-1" oninput="document.getElementById('satisfactionVal').innerText = this.value">
         <span id="satisfactionVal" class="w-3 shrink-0 text-right">3</span>
       </div>
-      <input type="text" id="satisfactionNote" placeholder="Why? (optional)"
-        class="w-full p-2 border border-stone-200 rounded-lg text-xs font-sans focus:outline-none focus:border-stone-900">
-
       <button type="submit" id="submitBtn" class="bg-stone-900 text-white font-bold text-xs px-6 py-2.5 rounded uppercase tracking-wider">Add Entry</button>
     </form>
 
@@ -198,30 +195,29 @@
     </div>
 
     <div>
-      <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">Calorie intake (7 days)</h3>
+      <div class="flex justify-between items-center mb-2">
+        <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase">Calorie intake (<span id="chartRangeLabel">7 days</span>)</h3>
+        <div class="flex border border-stone-200 rounded overflow-hidden text-[10px]">
+          <button onclick="setTrendRange(7)" id="range7Btn" class="px-2 py-1 bg-stone-900 text-white">7D</button>
+          <button onclick="setTrendRange(30)" id="range30Btn" class="px-2 py-1 text-stone-400 bg-white">30D</button>
+        </div>
+      </div>
       <div id="weekChart" class="flex flex-col gap-1.5"></div>
     </div>
 
     <div>
-      <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">Last 7 days</h3>
-      <div class="text-xs text-stone-600 leading-relaxed">
-        Avg: <span id="weekAvgCal">0</span> kcal/day · <span id="weekAvgProtein">0</span>g protein/day
-      </div>
-      <div class="text-xs text-stone-600 leading-relaxed mt-1">
-        Vegetables on <span id="weekVegDays">0</span>/7 days · Avg fibre: <span id="weekAvgFibre">0</span>g/day
-      </div>
-      <div class="text-xs text-stone-600 leading-relaxed mt-1">
-        Avg energy: <span id="weekAvgEnergy">—</span>/5 · Avg hunger: <span id="weekAvgHunger">—</span>/5
-      </div>
-    </div>
-
-    <div>
-      <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">Last 30 days</h3>
-      <div class="text-xs text-stone-600 leading-relaxed">
-        <span id="monthDaysLogged">0</span> days logged · avg <span id="monthAvgCal">0</span> kcal/day, <span id="monthAvgProtein">0</span>g protein/day · 
-      </div>
-      <div class="text-xs text-stone-600 leading-relaxed mt-1">
-      <span id="monthAlcoholUnits">0</span> alcohol units
+      <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">Summary (<span id="trendRangeLabel">Last 7 days</span>)</h3>
+      <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-stone-600 leading-relaxed">
+        <div>Avg kcal: <span id="rangeAvgCal">—</span></div>
+        <div>Avg protein: <span id="rangeAvgProtein">—</span></div>
+        <div>Avg fibre: <span id="rangeAvgFibre">—</span></div>
+        <div>Alcohol: <span id="rangeAlcoholUnits">—</span></div>
+        <div>Avg energy: <span id="rangeAvgEnergy">—</span></div>
+        <div>Avg hunger: <span id="rangeAvgHunger">—</span></div>
+        <div>Avg sleep: <span id="rangeAvgSleep">—</span></div>
+        <div>Days logged: <span id="rangeDaysLogged">0</span></div>
+        <div>Fibre: <span id="rangeFibreQuality">—</span></div>
+        <div>Fruit & veg: <span id="rangePlantsQuality">—</span></div>
       </div>
     </div>
 
@@ -258,6 +254,39 @@
   let pendingPhoto = null; // { base64, mimeType }
 
   function todayStr() { return new Date().toISOString().split('T')[0]; }
+
+  let activeTrendDays = 7;
+
+  function numericOrNull(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function displayNumber(value, suffix = '') {
+    const n = numericOrNull(value);
+    return n === null ? '—' : Math.round(n) + suffix;
+  }
+
+  function sumKnown(list, key) {
+    const values = list.map(item => numericOrNull(item[key])).filter(value => value !== null);
+    if (values.length === 0) return null;
+    return values.reduce((sum, value) => sum + value, 0);
+  }
+
+  function avgKnown(list, key) {
+    const values = list.map(item => numericOrNull(item[key])).filter(value => value !== null);
+    if (values.length === 0) return null;
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
+  }
+
+  function qualityFromAverage(value, thresholds) {
+    if (value === null) return '—';
+    if (value >= thresholds.high) return 'High';
+    if (value >= thresholds.moderate) return 'Moderate';
+    return 'Low';
+  }
+
 
   // Flip to false for words-only badges, no code restructuring needed.
   const USE_EMOJI_BADGES = true;
@@ -311,6 +340,13 @@
     document.getElementById('nav-log').className = 'font-black text-xs uppercase tracking-widest border-b-2 pb-0.5 ' + (target === 'log' ? 'text-stone-900 border-stone-900' : 'text-stone-400 border-transparent');
     document.getElementById('nav-trends').className = 'font-bold text-xs uppercase tracking-widest border-b-2 pb-0.5 ' + (target === 'trends' ? 'text-stone-900 border-stone-900' : 'text-stone-400 border-transparent');
     if (target === 'trends') render();
+  }
+
+  function setTrendRange(days) {
+    activeTrendDays = days;
+    document.getElementById('range7Btn').className = 'px-2 py-1 ' + (days === 7 ? 'bg-stone-900 text-white' : 'text-stone-400 bg-white');
+    document.getElementById('range30Btn').className = 'px-2 py-1 ' + (days === 30 ? 'bg-stone-900 text-white' : 'text-stone-400 bg-white');
+    render();
   }
 
   function loadSettingsIntoForm() {
@@ -496,18 +532,14 @@
     document.getElementById('photoLabel').innerText = '📷 Attach a photo of the meal (optional)';
   }
 
-  const PRIMARY_MODEL = 'gemini-2.5-flash';
-  const FALLBACK_MODEL = 'gemini-2.5-flash-lite';
+  const PRIMARY_MODEL = 'gemini-2.5-flash-lite';
 
-  // Tries the primary model twice (immediate + short backoff), then falls
-  // back to a second model if the primary is still overloaded (HTTP 503).
-  // Any non-503 error (bad key, quota, etc.) fails immediately — no point retrying those.
+  // Uses Flash Lite by default and makes only one retry on temporary overload/network failure.
+  // 429 quota/rate-limit errors are not retried because they burn requests without fixing anything.
   async function callGeminiWithRetry(body) {
     const plan = [
       [PRIMARY_MODEL, 0],
       [PRIMARY_MODEL, 1500],
-      [FALLBACK_MODEL, 0],
-      [FALLBACK_MODEL, 2000],
     ];
     const apiKey = localStorage.getItem('gemini_key');
     let lastErr = null;
@@ -523,14 +555,18 @@
         continue;
       }
       if (response.ok) return response;
+      if (response.status === 429) {
+        const errBody = await response.text();
+        throw new Error(`Gemini quota/rate limit reached (HTTP 429): ${errBody.slice(0, 200)}`);
+      }
       if (response.status === 503) {
-        lastErr = new Error(`${model} is overloaded (HTTP 503)`);
+        lastErr = new Error(`${model} is temporarily overloaded (HTTP 503)`);
         continue;
       }
       const errBody = await response.text();
       throw new Error(`Gemini error (HTTP ${response.status}): ${errBody.slice(0, 200)}`);
     }
-    throw lastErr || new Error('Gemini request failed after retries.');
+    throw lastErr || new Error('Gemini request failed after one retry.');
   }
 
   async function callGemini(text, photo) {
@@ -551,10 +587,11 @@ Rules:
   - vegetable_servings / fruit_servings: estimated servings (number, can be 0)
   - processed_level: one of "Low", "Moderate", "High" (how processed/refined the food is — lower is better)
   - whole_foods_pct: rough % of the meal that's whole/minimally processed food (0-100)
+  - satisfaction_note: if the raw text mentions enjoyment, fullness, cravings, whether it felt worth it, or how satisfying it was, extract a short phrase; otherwise null
 ${knownFoodsList ? `\nThis person has a list of previously saved "known foods" with verified nutrition values:\n${knownFoodsList}\n\nIf the log clearly refers to one of these (exact match or close variant, e.g. same brand/dish), use its saved calories/protein values exactly, scaling proportionally if a different portion is mentioned (e.g. "half" = divide by 2). Only use a known food's numbers if you're confident it's the same item — otherwise estimate fresh as usual.` : ''}
 
 Return ONLY this JSON shape, no other text:
-{"summary": "short clean one-line description", "calories": 0, "protein": 0, "exercise_calories": 0, "alcohol_units": 0, "fibre_grams": 0, "protein_quality": "Moderate", "fibre_quality": "Moderate", "vegetable_servings": 0, "fruit_servings": 0, "healthy_fats_quality": "Moderate", "processed_level": "Moderate", "whole_foods_pct": 50, "satiety_quality": "Moderate"}
+{"summary": "short clean one-line description", "calories": null, "protein": null, "exercise_calories": null, "alcohol_units": null, "fibre_grams": null, "protein_quality": "Moderate", "fibre_quality": "Moderate", "vegetable_servings": null, "fruit_servings": null, "healthy_fats_quality": "Moderate", "processed_level": "Moderate", "whole_foods_pct": 50, "satiety_quality": "Moderate", "satisfaction_note": null}
 
 Text log: "${text || '(none — see photo)'}"`;
 
@@ -577,7 +614,21 @@ Text log: "${text || '(none — see photo)'}"`;
 
     const btn = document.getElementById('backfillBtn');
     const status = document.getElementById('backfillStatus');
-    const missing = entries.filter(e => e.protein_quality == null && e.raw_text);
+    const missing = entries.filter(e => e.raw_text && (
+      e.calories == null ||
+      e.protein == null ||
+      e.exercise_calories == null ||
+      e.alcohol_units == null ||
+      e.fibre_grams == null ||
+      e.protein_quality == null ||
+      e.fibre_quality == null ||
+      e.vegetable_servings == null ||
+      e.fruit_servings == null ||
+      e.healthy_fats_quality == null ||
+      e.processed_level == null ||
+      e.whole_foods_pct == null ||
+      e.satiety_quality == null
+    ));
 
     if (missing.length === 0) { status.innerText = 'Nothing to backfill — every entry already has this data.'; return; }
 
@@ -588,40 +639,37 @@ Text log: "${text || '(none — see photo)'}"`;
     for (const entry of missing) {
       status.innerText = `Processing ${done + 1} of ${missing.length}...`;
       try {
-        const promptText = `Assess the nutritional quality of this food/activity log. If it's not food (e.g. pure exercise), return zeros/nulls as appropriate.
+        const parsed = await callGemini(entry.raw_text, null);
 
-Return ONLY this JSON shape, no other text:
-{"alcohol_units": 0, "fibre_grams": 0, "protein_quality": "Moderate", "fibre_quality": "Moderate", "vegetable_servings": 0, "fruit_servings": 0, "healthy_fats_quality": "Moderate", "processed_level": "Moderate", "whole_foods_pct": 50, "satiety_quality": "Moderate"}
+        const updates = {
+          summary: entry.summary || parsed.summary || entry.raw_text,
+          calories: entry.calories == null ? (numericOrNull(parsed.calories) === null ? null : Math.round(Number(parsed.calories))) : entry.calories,
+          protein: entry.protein == null ? (numericOrNull(parsed.protein) === null ? null : Math.round(Number(parsed.protein))) : entry.protein,
+          exercise_calories: entry.exercise_calories == null ? (numericOrNull(parsed.exercise_calories) === null ? null : Math.round(Number(parsed.exercise_calories))) : entry.exercise_calories,
+          alcohol_units: entry.alcohol_units == null ? numericOrNull(parsed.alcohol_units) : entry.alcohol_units,
+          fibre_grams: entry.fibre_grams == null ? numericOrNull(parsed.fibre_grams) : entry.fibre_grams,
+          protein_quality: entry.protein_quality || parsed.protein_quality || null,
+          fibre_quality: entry.fibre_quality || parsed.fibre_quality || null,
+          vegetable_servings: entry.vegetable_servings == null ? numericOrNull(parsed.vegetable_servings) : entry.vegetable_servings,
+          fruit_servings: entry.fruit_servings == null ? numericOrNull(parsed.fruit_servings) : entry.fruit_servings,
+          healthy_fats_quality: entry.healthy_fats_quality || parsed.healthy_fats_quality || null,
+          processed_level: entry.processed_level || parsed.processed_level || null,
+          whole_foods_pct: entry.whole_foods_pct == null && parsed.whole_foods_pct != null ? Math.round(Number(parsed.whole_foods_pct)) : entry.whole_foods_pct,
+          satiety_quality: entry.satiety_quality || parsed.satiety_quality || null,
+          satisfaction_note: entry.satisfaction_note || parsed.satisfaction_note || null
+        };
 
-Log: "${entry.raw_text}"`;
-        const body = JSON.stringify({
-          contents: [{ parts: [{ text: promptText }] }],
-          generationConfig: { responseMimeType: "application/json" }
-        });
-        const response = await callGeminiWithRetry(body);
-        const data = await response.json();
-        const parsed = JSON.parse(data.candidates[0].content.parts[0].text);
-
-        await supabaseClient.from('entries').update({
-          alcohol_units: entry.alcohol_units || Number(parsed.alcohol_units) || 0,
-          fibre_grams: Number(parsed.fibre_grams) || 0,
-          protein_quality: parsed.protein_quality || null,
-          fibre_quality: parsed.fibre_quality || null,
-          vegetable_servings: Number(parsed.vegetable_servings) || 0,
-          fruit_servings: Number(parsed.fruit_servings) || 0,
-          healthy_fats_quality: parsed.healthy_fats_quality || null,
-          processed_level: parsed.processed_level || null,
-          whole_foods_pct: parsed.whole_foods_pct != null ? Math.round(Number(parsed.whole_foods_pct)) : null,
-          satiety_quality: parsed.satiety_quality || null,
-        }).eq('id', entry.id);
+        const { error } = await supabaseClient.from('entries').update(updates).eq('id', entry.id);
+        if (error) throw new Error(error.message);
 
         done++;
       } catch (err) {
         failed++;
+        if (String(err.message || '').includes('429')) break;
       }
     }
 
-    status.innerText = `Done: updated ${done} ${failed ? `(${failed} failed — try again later if quota-limited)` : ''}`;
+    status.innerText = `Done: updated ${done}${failed ? ` (${failed} failed — quota/rate limit may have stopped the backlog)` : ''}`;
     btn.disabled = false;
     await fetchEntries();
   }
@@ -635,35 +683,48 @@ Log: "${entry.raw_text}"`;
     const text = txtEl.value.trim();
 
     if (!text && !pendingPhoto) { showBanner('Type something or attach a photo first.', 'error'); return; }
-    if (!localStorage.getItem('gemini_key')) { showBanner('Add your Gemini API key in Settings first.', 'error'); return; }
     if (!supabaseClient) { showBanner('Add your Supabase URL + key in Settings first.', 'error'); return; }
 
     btn.disabled = true;
     btn.innerText = 'SAVING...';
 
-    try {
-      const parsed = await callGemini(text, pendingPhoto);
-      const satisfactionNote = document.getElementById('satisfactionNote').value.trim();
-      const satisfactionLevel = Number(document.getElementById('satisfactionSlider').value);
+    let parsed = null;
+    let aiFailed = false;
 
+    if (localStorage.getItem('gemini_key')) {
+      try {
+        parsed = await callGemini(text, pendingPhoto);
+      } catch (err) {
+        aiFailed = true;
+        showBanner('AI unavailable. Saved raw entry for backfill later: ' + err.message, 'warn');
+      }
+    } else {
+      aiFailed = true;
+      showBanner('No Gemini key. Saved raw entry for backfill later.', 'warn');
+    }
+
+    const satisfactionLevel = Number(document.getElementById('satisfactionSlider').value);
+    const summary = parsed?.summary || text || '(photo only — needs analysis)';
+
+    try {
       const { error } = await supabaseClient.from('entries').insert({
         entry_date: dateEl.value || todayStr(),
         raw_text: text || '(photo only)',
-        summary: parsed.summary || text,
-        calories: Math.round(Number(parsed.calories)) || 0,
-        protein: Math.round(Number(parsed.protein)) || 0,
-        exercise_calories: Math.round(Number(parsed.exercise_calories)) || 0,
-        alcohol_units: Number(parsed.alcohol_units) || 0,
-        fibre_grams: Number(parsed.fibre_grams) || 0,
-        protein_quality: parsed.protein_quality || null,
-        fibre_quality: parsed.fibre_quality || null,
-        vegetable_servings: Number(parsed.vegetable_servings) || 0,
-        fruit_servings: Number(parsed.fruit_servings) || 0,
-        healthy_fats_quality: parsed.healthy_fats_quality || null,
-        processed_level: parsed.processed_level || null,
-        whole_foods_pct: parsed.whole_foods_pct != null ? Math.round(Number(parsed.whole_foods_pct)) : null,
-        satiety_quality: parsed.satiety_quality || null,
-        satisfaction_note: satisfactionNote || null,
+        summary,
+        calories: parsed ? (numericOrNull(parsed.calories) === null ? null : Math.round(Number(parsed.calories))) : null,
+        protein: parsed ? (numericOrNull(parsed.protein) === null ? null : Math.round(Number(parsed.protein))) : null,
+        exercise_calories: parsed ? (numericOrNull(parsed.exercise_calories) === null ? null : Math.round(Number(parsed.exercise_calories))) : null,
+        alcohol_units: parsed ? numericOrNull(parsed.alcohol_units) : null,
+        fibre_grams: parsed ? numericOrNull(parsed.fibre_grams) : null,
+        protein_quality: parsed?.protein_quality || null,
+        fibre_quality: parsed?.fibre_quality || null,
+        vegetable_servings: parsed ? numericOrNull(parsed.vegetable_servings) : null,
+        fruit_servings: parsed ? numericOrNull(parsed.fruit_servings) : null,
+        healthy_fats_quality: parsed?.healthy_fats_quality || null,
+        processed_level: parsed?.processed_level || null,
+        whole_foods_pct: parsed?.whole_foods_pct != null ? Math.round(Number(parsed.whole_foods_pct)) : null,
+        satiety_quality: parsed?.satiety_quality || null,
+        satisfaction_note: parsed?.satisfaction_note || null,
         satisfaction_level: satisfactionLevel,
       });
       if (error) throw new Error('Supabase insert failed: ' + error.message);
@@ -671,16 +732,17 @@ Log: "${entry.raw_text}"`;
       txtEl.value = '';
       clearPhoto();
       dateEl.value = todayStr();
-      document.getElementById('satisfactionNote').value = '';
       document.getElementById('satisfactionSlider').value = 3;
       document.getElementById('satisfactionVal').innerText = 3;
       await fetchEntries();
-      showBanner('Saved: ' + (parsed.summary || text), 'warn');
-      showNutrientOverview(parsed);
 
-      lastParsed = parsed;
-      document.getElementById('knownFoodName').value = parsed.summary || text;
-      document.getElementById('saveKnownPrompt').classList.remove('hidden');
+      if (!aiFailed && parsed) {
+        showBanner('Saved: ' + summary, 'warn');
+        showNutrientOverview(parsed);
+        lastParsed = parsed;
+        document.getElementById('knownFoodName').value = summary;
+        document.getElementById('saveKnownPrompt').classList.remove('hidden');
+      }
 
     } catch (err) {
       showBanner(err.message, 'error');
@@ -708,48 +770,68 @@ Log: "${entry.raw_text}"`;
 
     // Today's totals
     const todays = entries.filter(e => e.entry_date === today);
-    document.getElementById('todayCal').innerText = todays.reduce((s, e) => s + (e.calories || 0), 0);
-    document.getElementById('todayProtein').innerText = todays.reduce((s, e) => s + (e.protein || 0), 0);
-    document.getElementById('todayBurned').innerText = todays.reduce((s, e) => s + (e.exercise_calories || 0), 0);
+    document.getElementById('todayCal').innerText = displayNumber(sumKnown(todays, 'calories'));
+    document.getElementById('todayProtein').innerText = displayNumber(sumKnown(todays, 'protein'));
+    document.getElementById('todayBurned').innerText = displayNumber(sumKnown(todays, 'exercise_calories'));
 
-    // Last 7 days chart
-    const days = Array.from({ length: 7 }, (_, i) => dateNDaysAgo(6 - i));
-    const dayTotals = days.map(d => entries.filter(e => e.entry_date === d).reduce((s, e) => s + (e.calories || 0), 0));
-    const maxCal = Math.max(...dayTotals, 1);
+    // Active range chart and summary
+    const days = Array.from({ length: activeTrendDays }, (_, i) => dateNDaysAgo(activeTrendDays - 1 - i));
+    const dayTotals = days.map(d => {
+      const dayEntries = entries.filter(e => e.entry_date === d);
+      return sumKnown(dayEntries, 'calories');
+    });
+    const knownDayTotals = dayTotals.filter(c => c !== null);
+    const maxCal = Math.max(...knownDayTotals, 1);
+
+    document.getElementById('chartRangeLabel').innerText = activeTrendDays + ' days';
+    document.getElementById('trendRangeLabel').innerText = 'Last ' + activeTrendDays + ' days';
+
     document.getElementById('weekChart').innerHTML = days.map((d, i) => {
-      const label = new Date(d).toLocaleDateString(undefined, { weekday: 'short' });
-      const pct = Math.round((dayTotals[i] / maxCal) * 100);
+      const label = activeTrendDays === 7
+        ? new Date(d).toLocaleDateString(undefined, { weekday: 'short' })
+        : new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      const value = dayTotals[i];
+      const pct = value === null ? 0 : Math.round((value / maxCal) * 100);
       return `
         <div class="flex items-center gap-2 text-[10px]">
-          <span class="w-8 text-stone-400">${label}</span>
+          <span class="w-10 text-stone-400">${label}</span>
           <div class="flex-1 bg-stone-100 rounded h-3 overflow-hidden"><div class="bg-stone-800 h-3" style="width:${pct}%"></div></div>
-          <span class="w-10 text-right text-stone-500">${dayTotals[i]}</span>
+          <span class="w-10 text-right text-stone-500">${value === null ? '—' : Math.round(value)}</span>
         </div>`;
     }).join('');
-    const loggedDays = dayTotals.filter(c => c > 0).length || 1;
-    document.getElementById('weekAvgCal').innerText = Math.round(dayTotals.reduce((a, b) => a + b, 0) / loggedDays);
-    const weekProtein = days.map(d => entries.filter(e => e.entry_date === d).reduce((s, e) => s + (e.protein || 0), 0));
-    document.getElementById('weekAvgProtein').innerText = Math.round(weekProtein.reduce((a, b) => a + b, 0) / loggedDays);
 
-    const weekVegDayCount = days.filter(d => entries.some(e => e.entry_date === d && (Number(e.vegetable_servings) || 0) > 0)).length;
-    document.getElementById('weekVegDays').innerText = weekVegDayCount;
-    const weekFibreTotal = days.reduce((s, d) => s + entries.filter(e => e.entry_date === d).reduce((s2, e) => s2 + (Number(e.fibre_grams) || 0), 0), 0);
-    document.getElementById('weekAvgFibre').innerText = Math.round(weekFibreTotal / loggedDays);
+    const rangeEntries = entries.filter(e => days.includes(e.entry_date));
+    const rangeCheckins = checkins.filter(c => days.includes(c.entry_date));
+    const daysLogged = new Set(rangeEntries.map(e => e.entry_date)).size;
+    const daysWithKnownCalories = days.filter(d => sumKnown(entries.filter(e => e.entry_date === d), 'calories') !== null).length || 0;
 
-    const weekCheckins = checkins.filter(c => days.includes(c.entry_date));
-    document.getElementById('weekAvgEnergy').innerText = weekCheckins.length
-      ? (weekCheckins.reduce((s, c) => s + (c.energy || 0), 0) / weekCheckins.length).toFixed(1) : '—';
-    document.getElementById('weekAvgHunger').innerText = weekCheckins.length
-      ? (weekCheckins.reduce((s, c) => s + (c.hunger || 0), 0) / weekCheckins.length).toFixed(1) : '—';
+    const avgCal = daysWithKnownCalories
+      ? knownDayTotals.reduce((a, b) => a + b, 0) / daysWithKnownCalories
+      : null;
 
-    // Last 30 days
-    const monthCutoff = dateNDaysAgo(29);
-    const monthEntries = entries.filter(e => e.entry_date >= monthCutoff);
-    const monthDays = new Set(monthEntries.map(e => e.entry_date)).size || 1;
-    document.getElementById('monthDaysLogged').innerText = new Set(monthEntries.map(e => e.entry_date)).size;
-    document.getElementById('monthAvgCal').innerText = Math.round(monthEntries.reduce((s, e) => s + (e.calories || 0), 0) / monthDays);
-    document.getElementById('monthAvgProtein').innerText = Math.round(monthEntries.reduce((s, e) => s + (e.protein || 0), 0) / monthDays);
-    document.getElementById('monthAlcoholUnits').innerText = monthEntries.reduce((s, e) => s + (Number(e.alcohol_units) || 0), 0).toFixed(1).replace(/\.0$/, '');
+    const proteinTotals = days.map(d => sumKnown(entries.filter(e => e.entry_date === d), 'protein')).filter(v => v !== null);
+    const fibreTotals = days.map(d => sumKnown(entries.filter(e => e.entry_date === d), 'fibre_grams')).filter(v => v !== null);
+
+    const avgProtein = proteinTotals.length ? proteinTotals.reduce((a, b) => a + b, 0) / proteinTotals.length : null;
+    const avgFibre = fibreTotals.length ? fibreTotals.reduce((a, b) => a + b, 0) / fibreTotals.length : null;
+    const avgEnergy = avgKnown(rangeCheckins, 'energy');
+    const avgHunger = avgKnown(rangeCheckins, 'hunger');
+    const avgSleep = avgKnown(rangeCheckins, 'sleep');
+    const alcoholTotal = sumKnown(rangeEntries, 'alcohol_units');
+    const avgPlants = rangeEntries.length
+      ? rangeEntries.reduce((s, e) => s + (numericOrNull(e.vegetable_servings) || 0) + (numericOrNull(e.fruit_servings) || 0), 0) / Math.max(daysLogged, 1)
+      : null;
+
+    document.getElementById('rangeAvgCal').innerText = avgCal === null ? '—' : Math.round(avgCal);
+    document.getElementById('rangeAvgProtein').innerText = avgProtein === null ? '—' : Math.round(avgProtein) + 'g';
+    document.getElementById('rangeAvgFibre').innerText = avgFibre === null ? '—' : Math.round(avgFibre) + 'g';
+    document.getElementById('rangeAvgEnergy').innerText = avgEnergy === null ? '—' : avgEnergy.toFixed(1) + '/5';
+    document.getElementById('rangeAvgHunger').innerText = avgHunger === null ? '—' : avgHunger.toFixed(1) + '/5';
+    document.getElementById('rangeAvgSleep').innerText = avgSleep === null ? '—' : avgSleep.toFixed(1) + '/5';
+    document.getElementById('rangeDaysLogged').innerText = daysLogged + '/' + activeTrendDays;
+    document.getElementById('rangeAlcoholUnits').innerText = alcoholTotal === null ? '—' : alcoholTotal.toFixed(1).replace(/\.0$/, '') + ' units';
+    document.getElementById('rangeFibreQuality').innerText = qualityFromAverage(avgFibre, { moderate: 20, high: 28 });
+    document.getElementById('rangePlantsQuality').innerText = qualityFromAverage(avgPlants, { moderate: 3, high: 5 });
 
     // Feed (entries + check-ins merged, newest first)
     const feed = document.getElementById('feed');
@@ -782,6 +864,15 @@ Log: "${entry.raw_text}"`;
           </div>`;
       }
       const e = item.data;
+      const metrics = [
+        displayNumber(e.calories, ' kcal'),
+        displayNumber(e.protein, 'g protein')
+      ];
+      if (numericOrNull(e.fibre_grams) !== null) metrics.push(displayNumber(e.fibre_grams, 'g fibre'));
+      if (numericOrNull(e.satisfaction_level) !== null) metrics.push('satisfaction ' + e.satisfaction_level + '/5');
+      if (numericOrNull(e.exercise_calories) !== null && Number(e.exercise_calories) !== 0) metrics.push(displayNumber(e.exercise_calories, ' burned'));
+      if (numericOrNull(e.alcohol_units) !== null && Number(e.alcohol_units) !== 0) metrics.push(e.alcohol_units + ' alcohol units');
+
       return `
         <div class="border border-stone-200 p-3 rounded text-xs space-y-1.5">
           <div class="flex justify-between items-start gap-2">
@@ -791,7 +882,7 @@ Log: "${entry.raw_text}"`;
           ${e.satisfaction_note ? `<div class="font-sans text-stone-500 italic">${e.satisfaction_note}</div>` : ''}
           <div class="flex justify-between text-[10px] text-stone-400">
             <span>${dateLabel}</span>
-            <span>${e.calories || 0} kcal · ${e.protein || 0}g protein${e.fibre_grams ? ' · ' + Math.round(e.fibre_grams) + 'g fibre' : ''}${e.satisfaction_level ? ' · satisfaction ' + e.satisfaction_level + '/5' : ''}${e.exercise_calories ? ' · ' + e.exercise_calories + ' burned' : ''}${e.alcohol_units ? ' · ' + e.alcohol_units + ' alcohol units' : ''}</span>
+            <span>${metrics.join(' · ')}</span>
           </div>
         </div>`;
     }).join('') + (totalCount > FEED_LIMIT ? `<p class="text-[10px] text-stone-300 text-center pt-2">Showing most recent ${FEED_LIMIT} of ${totalCount} — older entries are still saved.</p>` : '');
