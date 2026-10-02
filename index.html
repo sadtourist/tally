@@ -52,7 +52,7 @@
 
   <header class="flex justify-between items-center mb-6 pt-2 border-b border-stone-200 pb-3">
     <h1 class="text-md font-black tracking-tighter">TALLY</h1>
-    <button onclick="toggleSettings()" class="text-stone-400 hover:text-stone-900 text-[10px] tracking-wider uppercase">Settings</button>
+    <div class="flex items-center gap-3"><span id="authEmail" class="hidden text-stone-300 text-[8px]"></span><button id="signOutBtn" onclick="signOutTally()" class="hidden text-stone-400 hover:text-stone-900 text-[10px] tracking-wider uppercase">Sign out</button><button onclick="toggleSettings()" class="text-stone-400 hover:text-stone-900 text-[10px] tracking-wider uppercase">Settings</button></div>
   </header>
 
   <div id="settings" class="hidden bg-stone-50 p-4 rounded-xl border border-stone-200 mb-6 flex flex-col gap-3 text-xs">
@@ -83,6 +83,15 @@
 
   <div id="banner" class="hidden mb-4 p-3 rounded text-xs leading-relaxed"></div>
 
+  <div id="authGate" class="hidden border border-stone-200 bg-stone-50 rounded-xl p-4 mb-6 flex-col gap-3 text-xs">
+    <div><div class="text-[10px] font-black tracking-wider text-stone-500 uppercase">🔐 Private Tally</div><p class="text-stone-400 text-[10px] mt-1 leading-relaxed">Sign in before Tally can read or write any personal data.</p></div>
+    <input type="email" id="authLoginEmail" autocomplete="username" placeholder="Email" class="w-full p-2 border border-stone-300 rounded text-xs bg-white">
+    <input type="password" id="authLoginPassword" autocomplete="current-password" placeholder="Password" class="w-full p-2 border border-stone-300 rounded text-xs bg-white">
+    <button onclick="signInTally()" id="signInBtn" class="w-full bg-stone-900 text-white font-bold py-2 rounded text-[10px] uppercase tracking-wider">Sign in</button>
+    <p id="authStatus" class="text-stone-400 text-[10px] leading-relaxed"></p>
+  </div>
+
+  <div id="privateApp">
   <!-- LOG TAB -->
   <div id="view-log" class="flex flex-col gap-4">
     <form onsubmit="addEntry(event)" class="flex flex-col gap-3">
@@ -277,7 +286,9 @@
     </div>
   </div>
 
-  <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-stone-200 py-3 px-6 max-w-md mx-auto flex justify-around items-center">
+  </div><!-- /privateApp -->
+
+  <nav id="bottomNav" class="fixed bottom-0 left-0 right-0 bg-white border-t border-stone-200 py-3 px-6 max-w-md mx-auto flex justify-around items-center">
     <button onclick="switchView('log')" id="nav-log" class="font-black text-xs uppercase tracking-widest border-b-2 pb-0.5 text-stone-900 border-stone-900">Log</button>
     <button onclick="switchView('goals')" id="nav-goals" class="font-bold text-xs uppercase tracking-widest border-b-2 pb-0.5 text-stone-400 border-transparent">Goals</button>
     <button onclick="switchView('trends')" id="nav-trends" class="font-bold text-xs uppercase tracking-widest border-b-2 pb-0.5 text-stone-400 border-transparent">Trends</button>
@@ -292,6 +303,8 @@
   let goals = [];
   let lastParsed = null;
   let pendingPhoto = null; // { base64, mimeType }
+  let currentUser = null;
+  let authSubscription = null;
 
   function todayStr() { return new Date().toISOString().split('T')[0]; }
 
@@ -433,21 +446,73 @@
     } finally { btn.disabled = false; btn.innerText = 'TEST CONNECTION'; }
   }
 
+  function setAuthUI(user) {
+    currentUser = user || null;
+    const gate = document.getElementById('authGate');
+    const app = document.getElementById('privateApp');
+    const nav = document.getElementById('bottomNav');
+    const out = document.getElementById('signOutBtn');
+    const email = document.getElementById('authEmail');
+    const settings = document.getElementById('settings');
+    if (user) {
+      gate.classList.add('hidden'); gate.classList.remove('flex');
+      app.classList.remove('hidden'); nav.classList.remove('hidden'); out.classList.remove('hidden');
+      email.innerText = user.email || ''; email.classList.remove('hidden');
+      if (settings) settings.classList.add('hidden');
+    } else {
+      gate.classList.remove('hidden'); gate.classList.add('flex');
+      app.classList.add('hidden'); nav.classList.add('hidden'); out.classList.add('hidden'); email.classList.add('hidden');
+      entries=[]; knownFoods=[]; checkins=[]; goals=[];
+    }
+  }
+
+  async function signInTally() {
+    if (!supabaseClient) { document.getElementById('authStatus').innerText='Open Settings and save your Supabase URL + publishable key first.'; return; }
+    const email=document.getElementById('authLoginEmail').value.trim();
+    const password=document.getElementById('authLoginPassword').value;
+    const btn=document.getElementById('signInBtn'); btn.disabled=true; btn.innerText='SIGNING IN...';
+    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+    btn.disabled=false; btn.innerText='SIGN IN';
+    if (error) { document.getElementById('authStatus').innerText='❌ '+error.message; return; }
+    document.getElementById('authStatus').innerText='';
+    await handleSignedIn(data.user);
+  }
+
+  async function signOutTally() {
+    if (!supabaseClient) return;
+    await supabaseClient.auth.signOut();
+    setAuthUI(null);
+  }
+
+  async function handleSignedIn(user) {
+    if (!user) return setAuthUI(null);
+    setAuthUI(user);
+    await Promise.all([fetchEntries(), fetchKnownFoods(), fetchCheckins(), fetchGoals()]);
+  }
+
+  async function initAuth() {
+    if (!supabaseClient) return;
+    const { data: { user }, error } = await supabaseClient.auth.getUser();
+    if (error || !user) setAuthUI(null); else await handleSignedIn(user);
+    if (authSubscription) authSubscription.unsubscribe();
+    const { data } = supabaseClient.auth.onAuthStateChange((event, session) => {
+      setTimeout(() => { if (event === 'SIGNED_OUT') setAuthUI(null); else if (session?.user) handleSignedIn(session.user); }, 0);
+    });
+    authSubscription = data.subscription;
+  }
+
   function initSupabase() {
     const url = localStorage.getItem('sb_url');
     const key = localStorage.getItem('sb_key');
     if (url && key) {
       try {
         supabaseClient = supabase.createClient(url, key);
-        fetchEntries();
-        fetchKnownFoods();
-        fetchCheckins();
-        fetchGoals();
+        initAuth();
       } catch (err) {
         showBanner('Could not connect to Supabase: ' + err.message, 'error');
       }
     } else {
-      showBanner('Open Settings and add your Supabase URL + key to start saving entries.', 'warn');
+      setAuthUI(null); showBanner('Open Settings and add your Supabase URL + key to sign in.', 'warn');
     }
   }
 
