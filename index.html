@@ -109,15 +109,15 @@
         class="w-full p-3 border border-stone-200 rounded-lg text-xs font-mono focus:outline-none focus:border-stone-900 resize-none"></textarea>
 
       <label class="flex items-center justify-between text-[11px] text-stone-400 cursor-pointer">
-        <span id="photoLabel">📷 Attach a photo (optional)</span>
-        <input type="file" id="photoInput" accept="image/*" class="hidden" onchange="onPhotoChange()">
+        <span id="photoLabel">📷 Attach photos (optional)</span>
+        <input type="file" id="photoInput" accept="image/*" multiple class="hidden" onchange="onPhotoChange()">
       </label>
-      <img id="photoPreview" class="hidden w-full max-h-48 object-cover rounded-lg border border-stone-200">
+      <div id="photoPreviews" class="hidden grid grid-cols-3 gap-2"></div>
 
       <div class="flex items-center gap-2 text-[11px] text-stone-500">
         <label for="satisfactionLevel" class="w-20 shrink-0">Satisfaction</label>
         <select id="satisfactionLevel" class="flex-1 border border-stone-200 rounded bg-white px-2 py-1.5 text-[11px] font-mono">
-          <option value="" selected>— not rated —</option>
+          <option value="" selected>N/A</option>
           <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option>
         </select>
       </div>
@@ -310,7 +310,7 @@
   let checkins = [];
   let goals = [];
   let lastParsed = null;
-  let pendingPhoto = null; // { base64, mimeType }
+  let pendingPhotos = []; // [{ base64, mimeType, name }]
   let currentUser = null;
   let authSubscription = null;
 
@@ -759,29 +759,41 @@
     showBanner('Saved "' + name + '" as a known food.', 'warn');
   }
 
-  function onPhotoChange() {
+  async function onPhotoChange() {
     const input = document.getElementById('photoInput');
     const label = document.getElementById('photoLabel');
-    const preview = document.getElementById('photoPreview');
-    const file = input.files[0];
-    if (!file) { pendingPhoto = null; preview.classList.add('hidden'); label.innerText = '📷 Attach a photo (optional)'; return; }
+    const previews = document.getElementById('photoPreviews');
+    const files = Array.from(input.files || []);
 
-    label.innerText = '📷 ' + file.name;
-    preview.src = URL.createObjectURL(file);
-    preview.classList.remove('hidden');
+    if (!files.length) { clearPhoto(); return; }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      pendingPhoto = { base64: reader.result.split(',')[1], mimeType: file.type };
-    };
-    reader.readAsDataURL(file);
+    label.innerText = `📷 ${files.length} photo${files.length === 1 ? '' : 's'} attached`;
+    previews.innerHTML = '';
+    previews.classList.remove('hidden');
+
+    for (const file of files) {
+      const img = document.createElement('img');
+      img.src = URL.createObjectURL(file);
+      img.alt = file.name;
+      img.className = 'w-full aspect-square object-cover rounded-lg border border-stone-200';
+      previews.appendChild(img);
+    }
+
+    pendingPhotos = await Promise.all(files.map(file => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve({ base64: reader.result.split(',')[1], mimeType: file.type, name: file.name });
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    })));
   }
 
   function clearPhoto() {
-    pendingPhoto = null;
+    pendingPhotos = [];
     document.getElementById('photoInput').value = '';
-    document.getElementById('photoPreview').classList.add('hidden');
-    document.getElementById('photoLabel').innerText = '📷 Attach a photo (optional)';
+    const previews = document.getElementById('photoPreviews');
+    previews.innerHTML = '';
+    previews.classList.add('hidden');
+    document.getElementById('photoLabel').innerText = '📷 Attach photos (optional)';
   }
 
   const PRIMARY_MODEL = 'gemini-2.5-flash-lite';
@@ -821,7 +833,7 @@
     throw lastErr || new Error('Gemini request failed after one retry.');
   }
 
-  async function callGemini(text, photo, entryDate = todayStr()) {
+  async function callGemini(text, photos, entryDate = todayStr()) {
     const knownFoodsList = knownFoods.length
       ? knownFoods.map(f => `- "${f.name}": ${f.calories} kcal, ${f.protein}g protein${f.notes ? ' (' + f.notes + ')' : ''}`).join('\n')
       : null;
@@ -845,9 +857,17 @@ SEPARATION RULES — IMPORTANT:
 - Preserve neutral event data now; correlations are analyzed later across many entries.
 - Do not infer a menstrual phase from symptoms in an individual log.
 
+DAY COMPLETENESS:
+- The user may casually say things like "yesterday was incomplete", "I forgot to log dinner yesterday", "Monday's log was incomplete", or "today is complete".
+- When they clearly describe whether a day's log is complete, create a day_status event.
+- Resolve relative dates such as today/yesterday from the REFERENCE TIME.
+- Use details exactly like {"status":"incomplete","date":"YYYY-MM-DD"} or {"status":"complete","date":"YYYY-MM-DD"}.
+- If they say they forgot a meal or significant food from a date, treat that date as incomplete even if they do not use the word incomplete.
+- Do not guess completeness when it was not stated.
+
 FOOD / EXERCISE:
 - If exact food amounts aren't given, estimate on the higher side for calories and portions rather than underestimating.
-- If a photo is attached, inspect it. It may be food OR a watch/workout screen. Extract visible workout metrics when present (duration, calories, heart rate, distance, etc.).
+- If one or more photos are attached, inspect ALL of them together as part of this single log entry. They may show multiple foods, labels, receipts, or watch/workout screens. Combine information across the photos without double-counting the same item. Extract visible workout metrics when present (duration, calories, heart rate, distance, etc.).
 - Alcohol uses UK units (1 unit = 10ml/8g pure alcohol); estimate generously if needed. Use 0 only when food/drink is clearly logged and no alcohol is present; otherwise null.
 - Nutritional quality fields should be null for non-food logs.
 ${knownFoodsList ? `\nKNOWN FOODS:\n${knownFoodsList}\nUse saved calories/protein exactly only when clearly the same item, scaling for portion.` : ''}
@@ -856,15 +876,17 @@ GOALS:
 Active goals are ${JSON.stringify(activeGoals)}.
 Return goal_keys only when the log clearly establishes that goal happened on the selected date. Do not award a star from implication or wishful language. A post-meal walk must actually be described as after/post-meal, not just any walk.
 
-EVENT TYPES may include: food, exercise, sleep, symptom, period_start, period_flow, spotting, medication, supplement, mood, measurement, life_event, other. Create multiple events when one log contains multiple distinct facts. event_time should be an ISO local datetime like "2026-10-02T10:00:00" when known, otherwise null. Keep details as a small JSON object with only facts actually stated or visible.
+EVENT TYPES may include: food, exercise, sleep, symptom, period_start, period_flow, spotting, medication, supplement, mood, measurement, life_event, day_status, other. Create multiple events when one log contains multiple distinct facts. event_time should be an ISO local datetime like "2026-10-02T10:00:00" when known, otherwise null. Keep details as a small JSON object with only facts actually stated or visible.
 
 Return ONLY this JSON shape:
 {"summary":"short clean one-line description","calories":null,"protein":null,"exercise_calories":null,"alcohol_units":null,"fibre_grams":null,"protein_quality":null,"fibre_quality":null,"vegetable_servings":null,"fruit_servings":null,"healthy_fats_quality":null,"processed_level":null,"whole_foods_pct":null,"satiety_quality":null,"satisfaction_note":null,"goal_keys":[],"events":[{"type":"symptom","event_time":null,"details":{"symptom":"bloating","severity":null}}]}
 
-Text log: "${text || '(none — inspect photo)'}"`;
+Text log: "${text || '(none — inspect attached photos)'}"`;
 
     const parts = [{ text: promptText }];
-    if (photo) parts.push({ inlineData: { mimeType: photo.mimeType, data: photo.base64 } });
+    for (const photo of (photos || [])) {
+      parts.push({ inlineData: { mimeType: photo.mimeType, data: photo.base64 } });
+    }
     const body = JSON.stringify({ contents: [{ parts }], generationConfig: { responseMimeType: "application/json" } });
     const response = await callGeminiWithRetry(body);
     const data = await response.json();
@@ -947,7 +969,7 @@ Text log: "${text || '(none — inspect photo)'}"`;
     const btn = document.getElementById('submitBtn');
     const text = txtEl.value.trim();
 
-    if (!text && !pendingPhoto) { showBanner('Type something or attach a photo first.', 'error'); return; }
+    if (!text && pendingPhotos.length === 0) { showBanner('Type something or attach at least one photo first.', 'error'); return; }
     if (!supabaseClient) { showBanner('Add your Supabase URL + key in Settings first.', 'error'); return; }
 
     btn.disabled = true;
@@ -958,7 +980,7 @@ Text log: "${text || '(none — inspect photo)'}"`;
 
     if (localStorage.getItem('gemini_key')) {
       try {
-        parsed = await callGemini(text, pendingPhoto, dateEl.value || todayStr());
+        parsed = await callGemini(text, pendingPhotos, dateEl.value || todayStr());
       } catch (err) {
         aiFailed = true;
         showBanner('AI unavailable. Saved raw entry for backfill later: ' + err.message, 'warn');
@@ -1038,6 +1060,20 @@ Text log: "${text || '(none — inspect photo)'}"`;
     return d.toISOString().split('T')[0];
   }
 
+  function dayStatusMap() {
+    const map = {};
+    const ordered = [...entries].sort((a,b) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
+    for (const e of ordered) {
+      for (const ev of parsedEvents(e)) {
+        if (ev.type !== 'day_status') continue;
+        const status = ev.details?.status;
+        const date = ev.details?.date || (ev.event_time ? String(ev.event_time).slice(0,10) : null);
+        if (date && (status === 'complete' || status === 'incomplete')) map[date] = status;
+      }
+    }
+    return map;
+  }
+
   function render() {
     renderGoals();
     renderCycleOverview();
@@ -1082,17 +1118,20 @@ Text log: "${text || '(none — inspect photo)'}"`;
     const days = Array.from({ length: activeTrendDays }, (_, i) => dateNDaysAgo(activeTrendDays - 1 - i));
     document.getElementById('trendRangeLabel').innerText = 'Last ' + activeTrendDays + ' days';
 
+    const statuses = dayStatusMap();
+    const usableDays = days.filter(d => statuses[d] !== 'incomplete');
     const rangeEntries = entries.filter(e => days.includes(e.entry_date));
     const rangeCheckins = checkins.filter(c => days.includes(c.entry_date));
     const daysLogged = new Set(rangeEntries.map(e => e.entry_date)).size;
-    const daysWithKnownCalories = days.filter(d => sumKnown(entries.filter(e => e.entry_date === d), 'calories') !== null).length || 0;
+    const knownDayTotals = usableDays.map(d => sumKnown(entries.filter(e => e.entry_date === d), 'calories')).filter(v => v !== null);
+    const daysWithKnownCalories = knownDayTotals.length;
 
     const avgCal = daysWithKnownCalories
       ? knownDayTotals.reduce((a, b) => a + b, 0) / daysWithKnownCalories
       : null;
 
-    const proteinTotals = days.map(d => sumKnown(entries.filter(e => e.entry_date === d), 'protein')).filter(v => v !== null);
-    const fibreTotals = days.map(d => sumKnown(entries.filter(e => e.entry_date === d), 'fibre_grams')).filter(v => v !== null);
+    const proteinTotals = usableDays.map(d => sumKnown(entries.filter(e => e.entry_date === d), 'protein')).filter(v => v !== null);
+    const fibreTotals = usableDays.map(d => sumKnown(entries.filter(e => e.entry_date === d), 'fibre_grams')).filter(v => v !== null);
 
     const avgProtein = proteinTotals.length ? proteinTotals.reduce((a, b) => a + b, 0) / proteinTotals.length : null;
     const avgFibre = fibreTotals.length ? fibreTotals.reduce((a, b) => a + b, 0) / fibreTotals.length : null;
@@ -1100,8 +1139,10 @@ Text log: "${text || '(none — inspect photo)'}"`;
     const avgHunger = avgKnown(rangeCheckins, 'hunger');
     const avgSleep = avgKnown(rangeCheckins, 'sleep');
     const alcoholTotal = sumKnown(rangeEntries, 'alcohol_units');
-    const avgPlants = rangeEntries.length
-      ? rangeEntries.reduce((s, e) => s + (numericOrNull(e.vegetable_servings) || 0) + (numericOrNull(e.fruit_servings) || 0), 0) / Math.max(daysLogged, 1)
+    const usableRangeEntries = rangeEntries.filter(e => statuses[e.entry_date] !== 'incomplete');
+    const usableLoggedDays = new Set(usableRangeEntries.map(e => e.entry_date)).size;
+    const avgPlants = usableRangeEntries.length
+      ? usableRangeEntries.reduce((s, e) => s + (numericOrNull(e.vegetable_servings) || 0) + (numericOrNull(e.fruit_servings) || 0), 0) / Math.max(usableLoggedDays, 1)
       : null;
 
     document.getElementById('rangeAvgCal').innerText = avgCal === null ? '—' : Math.round(avgCal);
@@ -1123,7 +1164,7 @@ Text log: "${text || '(none — inspect photo)'}"`;
     ].sort((a, b) => (b.date + b.created_at).localeCompare(a.date + a.created_at));
 
     const totalCount = feedItems.length;
-    const FEED_LIMIT = 25;
+    const FEED_LIMIT = 12;
     const visibleItems = feedItems.slice(0, FEED_LIMIT);
 
     if (visibleItems.length === 0) {
@@ -1191,17 +1232,20 @@ Text log: "${text || '(none — inspect photo)'}"`;
       satisfaction_note:e.satisfaction_note, goal_keys:e.goal_keys || [], events:parsedEvents(e)
     }));
     const recentCheckins = checkins.filter(c => c.entry_date >= cutoff).map(c => ({ date:c.entry_date, created_at:c.created_at, scope:c.scope, energy:c.energy, hunger:c.hunger, sleep:c.sleep, note:c.note }));
+    const statuses = dayStatusMap();
     const question = document.getElementById('insightQuestion').value.trim();
     if (recent.length < 3 && recentCheckins.length < 3) { box.innerText = 'Log a few more entries before patterns become meaningful.'; return; }
 
     btn.disabled = true; btn.innerText = 'ANALYZING...';
     try {
-      const prompt = `Analyze this person's ${activeTrendDays}-day personal log. Entries: ${JSON.stringify(recent)}. Check-ins: ${JSON.stringify(recentCheckins)}.
+      const prompt = `Analyze this person's ${activeTrendDays}-day personal log. Entries: ${JSON.stringify(recent)}. Check-ins: ${JSON.stringify(recentCheckins)}. Day-status map: ${JSON.stringify(statuses)}.
 
 ${question ? `Their question is: "${question}"` : 'Find 2-4 specific patterns or correlations that are genuinely supported by the data.'}
 
 Rules:
 - Treat food, symptoms, cycle events, exercise, sleep, supplements/medications, and goals as separate observations unless the data supports an association across repeated occasions.
+- A day marked incomplete is partial data. Never treat its calories, protein, fibre, fruit/vegetable intake, alcohol, or other logged quantities as the person's full-day total. It may still be used as an observation that a specific logged event happened.
+- A day without an explicit status is unknown, not confirmed complete. Be cautious about calling its logged quantities full-day totals.
 - Never turn same-day co-occurrence into causation. Say "coincided with", "was reported on", or "tended to occur" rather than "caused".
 - Quantify when possible: numerator/denominator, percentage, average, or number of observations. Make clear when the sample is small.
 - For questions like bloating after pizza, compare pizza occasions with bloating reports in a reasonable same-day/next-day window and state the count.
