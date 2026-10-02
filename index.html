@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Tally</title>
+<link rel="icon" type="image/png" href="icon-512.png">
+<link rel="apple-touch-icon" href="icon-512.png">
+<meta name="theme-color" content="#ffffff">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -182,9 +187,13 @@
         <button onclick="toggleManualKnownForm()" class="text-[10px] text-stone-400 uppercase tracking-wider text-left">+ Add manually</button>
         <div id="manualKnownForm" class="hidden flex flex-col gap-2 border border-stone-200 rounded-lg p-3">
           <input type="text" id="mkName" placeholder="Name" class="w-full p-2 border border-stone-300 rounded text-xs">
-          <div class="flex gap-2">
-            <input type="number" id="mkCalories" placeholder="Calories" class="w-1/2 p-2 border border-stone-300 rounded text-xs">
-            <input type="number" id="mkProtein" placeholder="Protein (g)" class="w-1/2 p-2 border border-stone-300 rounded text-xs">
+          <div class="grid grid-cols-2 gap-2">
+            <input type="number" step="any" id="mkCalories" placeholder="Calories" class="w-full p-2 border border-stone-300 rounded text-xs">
+            <input type="number" step="any" id="mkProtein" placeholder="Protein (g)" class="w-full p-2 border border-stone-300 rounded text-xs">
+            <input type="number" step="any" id="mkCarbs" placeholder="Carbs (g)" class="w-full p-2 border border-stone-300 rounded text-xs">
+            <input type="number" step="any" id="mkFat" placeholder="Fat (g)" class="w-full p-2 border border-stone-300 rounded text-xs">
+            <input type="number" step="any" id="mkFibre" placeholder="Fibre (g)" class="w-full p-2 border border-stone-300 rounded text-xs">
+            <input type="number" step="any" id="mkSugar" placeholder="Sugar (g)" class="w-full p-2 border border-stone-300 rounded text-xs">
           </div>
           <input type="text" id="mkNotes" placeholder="Notes (optional) — e.g. portion details" class="w-full p-2 border border-stone-300 rounded text-xs">
           <button onclick="addManualKnownFood()" class="bg-stone-900 text-white text-[10px] uppercase tracking-wider py-2 rounded">Save Known Food</button>
@@ -717,24 +726,31 @@
       return;
     }
     list.innerHTML = knownFoods.map(f => `
-      <div class="border-b border-stone-100 py-1">${f.name}</div>`).join('');
+      <div class="border-b border-stone-100 py-1"><div>${f.name}</div><div class="text-[9px] text-stone-300">${[f.calories != null ? f.calories + ' kcal' : '', f.protein != null ? f.protein + 'g protein' : '', f.fibre != null ? f.fibre + 'g fibre' : ''].filter(Boolean).join(' · ')}</div></div>`).join('');
   }
 
   async function addManualKnownFood() {
     const name = document.getElementById('mkName').value.trim();
-    const calories = Number(document.getElementById('mkCalories').value) || 0;
-    const protein = Number(document.getElementById('mkProtein').value) || 0;
+    const readOptionalNumber = id => {
+      const raw = document.getElementById(id).value.trim();
+      return raw === '' ? null : Number(raw);
+    };
+    const calories = readOptionalNumber('mkCalories');
+    const protein = readOptionalNumber('mkProtein');
+    const carbs = readOptionalNumber('mkCarbs');
+    const fat = readOptionalNumber('mkFat');
+    const fibre = readOptionalNumber('mkFibre');
+    const sugar = readOptionalNumber('mkSugar');
     const notes = document.getElementById('mkNotes').value.trim();
     if (!name) { showBanner('Give the known food a name first.', 'error'); return; }
     if (!supabaseClient) return;
 
-    const { error } = await supabaseClient.from('known_foods').insert({ name, calories, protein, notes });
+    const { error } = await supabaseClient.from('known_foods').insert({
+      name, calories, protein, carbs, fat, fibre, sugar, notes: notes || null
+    });
     if (error) { showBanner('Could not save known food: ' + error.message, 'error'); return; }
 
-    document.getElementById('mkName').value = '';
-    document.getElementById('mkCalories').value = '';
-    document.getElementById('mkProtein').value = '';
-    document.getElementById('mkNotes').value = '';
+    ['mkName','mkCalories','mkProtein','mkCarbs','mkFat','mkFibre','mkSugar','mkNotes'].forEach(id => document.getElementById(id).value = '');
     await fetchKnownFoods();
     showBanner('Saved "' + name + '" as a known food.', 'warn');
   }
@@ -749,8 +765,12 @@
     if (!name || !lastParsed || !supabaseClient) return;
     const { error } = await supabaseClient.from('known_foods').insert({
       name,
-      calories: lastParsed.calories,
-      protein: lastParsed.protein,
+      calories: numericOrNull(lastParsed.calories),
+      protein: numericOrNull(lastParsed.protein),
+      carbs: numericOrNull(lastParsed.carbs),
+      fat: numericOrNull(lastParsed.fat),
+      fibre: numericOrNull(lastParsed.fibre_grams),
+      sugar: numericOrNull(lastParsed.sugar),
       notes: lastParsed.notes || null
     });
     if (error) { showBanner('Could not save known food: ' + error.message, 'error'); return; }
@@ -835,7 +855,7 @@
 
   async function callGemini(text, photos, entryDate = todayStr()) {
     const knownFoodsList = knownFoods.length
-      ? knownFoods.map(f => `- "${f.name}": ${f.calories} kcal, ${f.protein}g protein${f.notes ? ' (' + f.notes + ')' : ''}`).join('\n')
+      ? knownFoods.map(f => `- "${f.name}": ${[f.calories != null ? f.calories + ' kcal' : '', f.protein != null ? f.protein + 'g protein' : '', f.carbs != null ? f.carbs + 'g carbs' : '', f.fat != null ? f.fat + 'g fat' : '', f.fibre != null ? f.fibre + 'g fibre' : '', f.sugar != null ? f.sugar + 'g sugar' : ''].filter(Boolean).join(', ')}${f.notes ? ' (' + f.notes + ')' : ''}`).join('\n')
       : null;
     const activeGoals = goals.filter(g => g.active !== false).map(g => ({ key:g.key, label:g.label }));
     const now = new Date();
@@ -1267,4 +1287,4 @@ Return ONLY a JSON array of 1-4 strings, each under 32 words.`;
   initSupabase();
 </script>
 </body>
-</html> 
+</html>
