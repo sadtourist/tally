@@ -65,11 +65,14 @@
       <input type="text" id="sbUrl" class="w-full p-2 border border-stone-300 rounded text-xs">
     </div>
     <div>
-      <label class="block mb-1 text-stone-500 text-[9px] uppercase">Supabase Anon Key</label>
+      <label class="block mb-1 text-stone-500 text-[9px] uppercase">Supabase Publishable / Anon Key</label>
       <input type="password" id="sbKey" class="w-full p-2 border border-stone-300 rounded text-xs">
     </div>
-    <button onclick="saveSettings()" class="w-full bg-stone-900 text-white font-bold py-2 rounded text-[10px] uppercase tracking-wider">Save</button>
-    <p class="text-stone-400 text-[10px] leading-relaxed">Use the exact same three values on every device.</p>
+    <div class="grid grid-cols-2 gap-2">
+      <button onclick="saveSettings()" class="w-full bg-stone-900 text-white font-bold py-2 rounded text-[10px] uppercase tracking-wider">Save</button>
+      <button onclick="testSupabaseConnection()" id="testConnectionBtn" class="w-full bg-white border border-stone-300 text-stone-700 font-bold py-2 rounded text-[10px] uppercase tracking-wider">Test connection</button>
+    </div>
+    <p id="connectionStatus" class="text-stone-400 text-[10px] leading-relaxed">Use the exact same three values on every device.</p>
 
     <div class="border-t border-stone-200 pt-3 mt-1">
       <button onclick="backfillNutrients()" id="backfillBtn" class="w-full bg-stone-200 text-stone-700 font-bold py-2 rounded text-[10px] uppercase tracking-wider">Backfill missing nutrient data</button>
@@ -84,14 +87,14 @@
   <div id="view-log" class="flex flex-col gap-4">
     <form onsubmit="addEntry(event)" class="flex flex-col gap-3">
       <div class="flex justify-between items-center">
-        <span class="text-[10px] font-bold tracking-wider text-stone-400 uppercase">🥘 New Entry (food and exercise)</span>
+        <span class="text-[10px] font-bold tracking-wider text-stone-400 uppercase">📝 New Entry</span>
         <input type="date" id="entryDate" class="text-xs border border-stone-200 rounded px-2 py-0.5 bg-stone-50">
       </div>
-      <textarea id="rawText" rows="4" placeholder="Type what you ate or did..."
-        class="w-full p-3 border border-stone-200 rounded-lg text-sm font-sans focus:outline-none focus:border-stone-900 resize-none"></textarea>
+      <textarea id="rawText" rows="4" placeholder="Type anything: food, workout, symptoms, period, sleep, vitamins..."
+        class="w-full p-3 border border-stone-200 rounded-lg text-sm font-mono focus:outline-none focus:border-stone-900 resize-none"></textarea>
 
       <label class="flex items-center justify-between text-[11px] text-stone-400 cursor-pointer">
-        <span id="photoLabel">📷 Attach a photo of the meal (optional)</span>
+        <span id="photoLabel">📷 Attach a photo (optional)</span>
         <input type="file" id="photoInput" accept="image/*" class="hidden" onchange="onPhotoChange()">
       </label>
       <img id="photoPreview" class="hidden w-full max-h-48 object-cover rounded-lg border border-stone-200">
@@ -141,7 +144,7 @@
         </div>
 
         <textarea id="checkinNote" rows="2" placeholder="Commentary (optional)"
-          class="w-full p-2 border border-stone-200 rounded-lg text-xs font-sans focus:outline-none focus:border-stone-900 resize-none"></textarea>
+          class="w-full p-2 border border-stone-200 rounded-lg text-xs font-mono focus:outline-none focus:border-stone-900 resize-none"></textarea>
 
         <label class="flex items-center gap-2 text-[11px] text-stone-400">
           <input type="checkbox" id="checkinDayOverall">
@@ -173,11 +176,33 @@
     </div>
   </div>
 
+  <!-- GOALS TAB -->
+  <div id="view-goals" class="hidden flex flex-col gap-5">
+    <div>
+      <div class="flex justify-between items-center mb-2">
+        <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase">⭐ Last 14 days</h3>
+        <span class="text-[9px] text-stone-300 uppercase">Auto-filled from your log</span>
+      </div>
+      <div id="goalChart" class="overflow-x-auto border border-stone-200 rounded-lg bg-white"></div>
+      <p class="text-[10px] text-stone-400 mt-2 leading-relaxed">★ means Tally found that goal in something you logged. ☆ means it didn't. No score, no streak judgment.</p>
+    </div>
+
+    <div class="border-t border-stone-100 pt-4">
+      <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">🎯 Your goals</h3>
+      <div id="goalsList" class="flex flex-col gap-2 mb-3"></div>
+      <div class="flex gap-2">
+        <input id="newGoalLabel" type="text" placeholder="Add a goal..." class="flex-1 p-2 border border-stone-300 rounded text-xs">
+        <button onclick="addGoal()" class="bg-stone-900 text-white text-[10px] uppercase tracking-wider px-3 rounded">Add</button>
+      </div>
+      <p class="text-[10px] text-stone-400 mt-2 leading-relaxed">Add whatever matters now. Goals stay here until you archive them, and old stars remain in your history.</p>
+    </div>
+  </div>
+
   <!-- TRENDS TAB -->
   <div id="view-trends" class="hidden flex flex-col gap-6">
 
     <div>
-      <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">Today</h3>
+      <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">📍 Today</h3>
       <div class="grid grid-cols-3 gap-2 text-center">
         <div class="border border-stone-200 p-2.5 rounded">
           <div class="text-[9px] text-stone-400 uppercase">Calories in</div>
@@ -192,21 +217,24 @@
           <div class="text-md font-black"><span id="todayBurned">0</span></div>
         </div>
       </div>
+      <div id="todayQuality" class="mt-2 text-[11px] text-stone-500 leading-relaxed">Fibre: — · Fruit & veg: —</div>
     </div>
 
     <div>
-      <div class="flex justify-between items-center mb-2">
-        <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase">Calorie intake (<span id="chartRangeLabel">7 days</span>)</h3>
-        <div class="flex border border-stone-200 rounded overflow-hidden text-[10px]">
-          <button onclick="setTrendRange(7)" id="range7Btn" class="px-2 py-1 bg-stone-900 text-white">7D</button>
-          <button onclick="setTrendRange(30)" id="range30Btn" class="px-2 py-1 text-stone-400 bg-white">30D</button>
-        </div>
-      </div>
+      <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">🍽️ Calorie intake (last 7 days)</h3>
       <div id="weekChart" class="flex flex-col gap-1.5"></div>
     </div>
 
     <div>
-      <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">Summary (<span id="trendRangeLabel">Last 7 days</span>)</h3>
+      <div class="flex justify-between items-center mb-2">
+        <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase">📊 Summary (<span id="trendRangeLabel">Last 7 days</span>)</h3>
+        <div class="flex border border-stone-200 rounded overflow-hidden text-[10px]">
+          <button onclick="setTrendRange(7)" id="range7Btn" class="px-2 py-1 bg-stone-900 text-white">7D</button>
+          <button onclick="setTrendRange(30)" id="range30Btn" class="px-2 py-1 text-stone-400 bg-white">30D</button>
+          <button onclick="setTrendRange(90)" id="range90Btn" class="px-2 py-1 text-stone-400 bg-white">90D</button>
+          <button onclick="setTrendRange(365)" id="range365Btn" class="px-2 py-1 text-stone-400 bg-white">1Y</button>
+        </div>
+      </div>
       <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-stone-600 leading-relaxed">
         <div>Avg kcal: <span id="rangeAvgCal">—</span></div>
         <div>Avg protein: <span id="rangeAvgProtein">—</span></div>
@@ -222,17 +250,27 @@
     </div>
 
     <div>
-      <div class="flex justify-between items-center mb-2">
-        <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase">Patterns</h3>
-        <button onclick="generateInsights()" id="insightsBtn" class="text-[10px] uppercase tracking-wider bg-stone-900 text-white px-3 py-1.5 rounded">Analyze</button>
-      </div>
-      <div id="insightsBox" class="border border-stone-200 rounded-lg p-3 text-xs bg-stone-50 leading-relaxed text-stone-600">
-        Tap "Analyze" to look for patterns in your recent logs.
+      <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">🩸 Cycle</h3>
+      <div id="cycleOverview" class="border border-stone-200 rounded-lg p-3 text-xs bg-stone-50 leading-relaxed text-stone-600">
+        Log period starts in plain language and Tally will build this over time.
       </div>
     </div>
 
     <div>
-      <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">Recent Entries</h3>
+      <div class="flex justify-between items-center mb-2">
+        <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase">🔎 Patterns</h3>
+        <button onclick="generateInsights()" id="insightsBtn" class="text-[10px] uppercase tracking-wider bg-stone-900 text-white px-3 py-1.5 rounded">Analyze</button>
+      </div>
+      <div class="flex gap-2 mb-2">
+        <input id="insightQuestion" type="text" placeholder="Ask Tally, e.g. when am I usually bloated?" class="flex-1 p-2 border border-stone-300 rounded text-xs font-mono">
+      </div>
+      <div id="insightsBox" class="border border-stone-200 rounded-lg p-3 text-xs bg-stone-50 leading-relaxed text-stone-600">
+        Tap "Analyze" for patterns, or ask a specific question.
+      </div>
+    </div>
+
+    <div>
+      <h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase mb-2">📝 Recent Entries</h3>
       <div id="feed" class="flex flex-col gap-2">
         <p class="text-xs text-stone-300 italic text-center py-6">No entries yet.</p>
       </div>
@@ -241,6 +279,7 @@
 
   <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-stone-200 py-3 px-6 max-w-md mx-auto flex justify-around items-center">
     <button onclick="switchView('log')" id="nav-log" class="font-black text-xs uppercase tracking-widest border-b-2 pb-0.5 text-stone-900 border-stone-900">Log</button>
+    <button onclick="switchView('goals')" id="nav-goals" class="font-bold text-xs uppercase tracking-widest border-b-2 pb-0.5 text-stone-400 border-transparent">Goals</button>
     <button onclick="switchView('trends')" id="nav-trends" class="font-bold text-xs uppercase tracking-widest border-b-2 pb-0.5 text-stone-400 border-transparent">Trends</button>
   </nav>
 </div>
@@ -250,6 +289,7 @@
   let entries = [];
   let knownFoods = [];
   let checkins = [];
+  let goals = [];
   let lastParsed = null;
   let pendingPhoto = null; // { base64, mimeType }
 
@@ -336,16 +376,22 @@
 
   function switchView(target) {
     document.getElementById('view-log').classList.toggle('hidden', target !== 'log');
+    document.getElementById('view-goals').classList.toggle('hidden', target !== 'goals');
     document.getElementById('view-trends').classList.toggle('hidden', target !== 'trends');
-    document.getElementById('nav-log').className = 'font-black text-xs uppercase tracking-widest border-b-2 pb-0.5 ' + (target === 'log' ? 'text-stone-900 border-stone-900' : 'text-stone-400 border-transparent');
-    document.getElementById('nav-trends').className = 'font-bold text-xs uppercase tracking-widest border-b-2 pb-0.5 ' + (target === 'trends' ? 'text-stone-900 border-stone-900' : 'text-stone-400 border-transparent');
+    for (const name of ['log','goals','trends']) {
+      const active = name === target;
+      document.getElementById('nav-' + name).className = (active ? 'font-black' : 'font-bold') + ' text-xs uppercase tracking-widest border-b-2 pb-0.5 ' + (active ? 'text-stone-900 border-stone-900' : 'text-stone-400 border-transparent');
+    }
+    if (target === 'goals') renderGoals();
     if (target === 'trends') render();
   }
 
   function setTrendRange(days) {
     activeTrendDays = days;
-    document.getElementById('range7Btn').className = 'px-2 py-1 ' + (days === 7 ? 'bg-stone-900 text-white' : 'text-stone-400 bg-white');
-    document.getElementById('range30Btn').className = 'px-2 py-1 ' + (days === 30 ? 'bg-stone-900 text-white' : 'text-stone-400 bg-white');
+    for (const n of [7,30,90,365]) {
+      const el = document.getElementById('range' + n + 'Btn');
+      if (el) el.className = 'px-2 py-1 ' + (days === n ? 'bg-stone-900 text-white' : 'text-stone-400 bg-white');
+    }
     render();
   }
 
@@ -363,6 +409,30 @@
     initSupabase();
   }
 
+  async function testSupabaseConnection() {
+    const status = document.getElementById('connectionStatus');
+    const btn = document.getElementById('testConnectionBtn');
+    const url = document.getElementById('sbUrl').value.trim() || localStorage.getItem('sb_url');
+    const key = document.getElementById('sbKey').value.trim() || localStorage.getItem('sb_key');
+    if (!url || !key) { status.innerText = '❌ Add the Supabase URL and publishable/anon key first.'; return; }
+    btn.disabled = true; btn.innerText = 'TESTING...';
+    try {
+      const client = supabase.createClient(url, key);
+      const tables = ['entries','checkins','goals'];
+      const results = [];
+      for (const table of tables) {
+        try {
+          const { error } = await client.from(table).select('id').limit(1);
+          results.push(error ? `${table}: ${error.code || ''} ${error.message}`.trim() : `${table}: OK`);
+        } catch (err) { results.push(`${table}: network failure (${err.message})`); }
+      }
+      const ok = results.every(x => x.endsWith(': OK'));
+      status.innerText = (ok ? '✅ Connected. ' : '⚠️ Supabase responded, but something needs attention. ') + results.join(' · ');
+    } catch (err) {
+      status.innerText = '❌ Could not reach Supabase: ' + err.message;
+    } finally { btn.disabled = false; btn.innerText = 'TEST CONNECTION'; }
+  }
+
   function initSupabase() {
     const url = localStorage.getItem('sb_url');
     const key = localStorage.getItem('sb_key');
@@ -372,6 +442,7 @@
         fetchEntries();
         fetchKnownFoods();
         fetchCheckins();
+        fetchGoals();
       } catch (err) {
         showBanner('Could not connect to Supabase: ' + err.message, 'error');
       }
@@ -413,7 +484,7 @@
       .select('*')
       .order('entry_date', { ascending: false })
       .order('created_at', { ascending: false });
-    if (error) { showBanner('Could not load check-ins: ' + error.message, 'error'); return; }
+    if (error) { showBanner('Could not load check-ins: ' + (error.message || JSON.stringify(error)) + '. Open Settings → Test connection for details.', 'error'); return; }
     checkins = data || [];
     render();
   }
@@ -455,6 +526,114 @@
       btn.disabled = false;
       btn.innerText = 'LOG CHECK-IN';
     }
+  }
+
+  async function fetchGoals() {
+    if (!supabaseClient) return;
+    const { data, error } = await supabaseClient.from('goals').select('*').order('sort_order', { ascending: true }).order('created_at', { ascending: true });
+    if (error) { showBanner('Could not load goals: ' + error.message, 'error'); return; }
+    goals = data || [];
+    renderGoals();
+  }
+
+  function slugifyGoal(label) {
+    return label.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 60) || ('goal_' + Date.now());
+  }
+
+  function goalEmoji(label) {
+    const x = String(label || '').toLowerCase();
+    if (/vitamin|supplement|meds|medicine/.test(x)) return '💊';
+    if (/walk|steps|stroll/.test(x)) return '🚶';
+    if (/exercise|workout|gym|boxing|swim|run|yoga|pilates|cycle|bike|movement/.test(x)) return '🏃';
+    if (/sleep|bed/.test(x)) return '😴';
+    if (/read|book/.test(x)) return '📖';
+    if (/stretch|mobility/.test(x)) return '🤸';
+    if (/fruit|veg|vegetable|food|meal/.test(x)) return '🥦';
+    if (/alcohol|drink/.test(x)) return '🍷';
+    return '⭐';
+  }
+
+  async function addGoal() {
+    const el = document.getElementById('newGoalLabel');
+    const label = el.value.trim();
+    if (!label || !supabaseClient) return;
+    const { error } = await supabaseClient.from('goals').insert({ key: slugifyGoal(label), label, active: true, sort_order: goals.length });
+    if (error) { showBanner('Could not add goal: ' + error.message, 'error'); return; }
+    el.value = '';
+    await fetchGoals();
+  }
+
+  async function archiveGoal(id) {
+    if (!supabaseClient) return;
+    const { error } = await supabaseClient.from('goals').update({ active: false }).eq('id', id);
+    if (error) { showBanner('Could not archive goal: ' + error.message, 'error'); return; }
+    await fetchGoals();
+  }
+
+  function localDateNDaysAgo(n) {
+    const d = new Date(); d.setHours(12,0,0,0); d.setDate(d.getDate()-n);
+    return d.toISOString().split('T')[0];
+  }
+
+  function renderGoals() {
+    const list = document.getElementById('goalsList');
+    const chart = document.getElementById('goalChart');
+    if (!list || !chart) return;
+    const active = goals.filter(g => g.active !== false);
+    list.innerHTML = active.length ? active.map(g => `<div class="flex justify-between items-center border-b border-stone-100 py-1.5 text-xs"><span>${goalEmoji(g.label)} ${g.label}</span><button onclick="archiveGoal('${g.id}')" class="text-[9px] uppercase tracking-wider text-stone-300 hover:text-stone-700">Archive</button></div>`).join('') : '<p class="text-xs text-stone-300 italic">No active goals yet.</p>';
+
+    const dates = [];
+    for (let i=13;i>=0;i--) dates.push(localDateNDaysAgo(i));
+    const matched = new Map();
+    for (const e of entries) {
+      const keys = Array.isArray(e.goal_keys) ? e.goal_keys : [];
+      for (const key of keys) matched.set(e.entry_date + '|' + key, true);
+    }
+    if (!active.length) { chart.innerHTML = '<p class="p-4 text-xs text-stone-300 italic">Add a goal to start your chart.</p>'; return; }
+    const head = dates.map(d => { const x=new Date(d+'T12:00:00'); return `<th class="min-w-8 px-1 py-2 text-[8px] text-stone-400 font-normal"><div>${x.toLocaleDateString(undefined,{weekday:'narrow'})}</div><div>${x.getDate()}</div></th>`; }).join('');
+    const rows = active.map(g => `<tr class="border-t border-stone-100"><td class="sticky left-0 bg-white px-2 py-2 text-[10px] whitespace-nowrap font-bold">${goalEmoji(g.label)} ${g.label}</td>${dates.map(d => `<td class="text-center px-1 py-2 text-sm ${matched.get(d+'|'+g.key) ? 'text-stone-900' : 'text-stone-200'}">${matched.get(d+'|'+g.key) ? '★' : '☆'}</td>`).join('')}</tr>`).join('');
+    chart.innerHTML = `<table class="min-w-max w-full"><thead><tr><th class="sticky left-0 bg-white min-w-28"></th>${head}</tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  function parsedEvents(e) {
+    if (!e || !e.event_data) return [];
+    if (Array.isArray(e.event_data)) return e.event_data;
+    if (Array.isArray(e.event_data.events)) return e.event_data.events;
+    return [];
+  }
+
+  function periodStarts() {
+    const found = [];
+    for (const e of entries) for (const ev of parsedEvents(e)) {
+      if (ev.type === 'period_start' || ev.period_started === true) found.push((ev.event_time || e.entry_date).slice(0,10));
+    }
+    return [...new Set(found)].sort();
+  }
+
+  function renderCycleOverview() {
+    const box = document.getElementById('cycleOverview');
+    if (!box) return;
+    const starts = periodStarts();
+    if (!starts.length) { box.innerHTML = 'No period start logged yet. Just type it naturally in Log when it happens.'; return; }
+    const last = starts[starts.length-1];
+    const today = new Date(todayStr()+'T12:00:00');
+    const lastD = new Date(last+'T12:00:00');
+    const cycleDay = Math.floor((today-lastD)/86400000)+1;
+    let avg = null;
+    if (starts.length >= 2) {
+      const gaps=[]; for(let i=1;i<starts.length;i++) gaps.push(Math.round((new Date(starts[i]+'T12:00:00')-new Date(starts[i-1]+'T12:00:00'))/86400000));
+      avg = gaps.reduce((a,b)=>a+b,0)/gaps.length;
+    }
+    let phase = 'Not enough data to estimate a phase yet.';
+    if (avg && starts.length >= 3) {
+      const estimatedOvulation = Math.max(1, Math.round(avg - 14));
+      if (cycleDay <= 5) phase = 'Likely menstrual phase';
+      else if (cycleDay < estimatedOvulation-2) phase = 'Likely follicular phase';
+      else if (cycleDay <= estimatedOvulation+2) phase = 'Around estimated ovulation';
+      else phase = 'Likely luteal phase';
+      phase += ' (calendar estimate, not confirmation)';
+    }
+    box.innerHTML = `<div><span class="font-bold">Cycle day ${cycleDay}</span> · ${phase}</div><div class="text-stone-400 mt-1">Last period start: ${new Date(last+'T12:00:00').toLocaleDateString(undefined,{day:'numeric',month:'short'})}${avg ? ` · Avg cycle: ${avg.toFixed(1)} days` : ''} · ${starts.length} cycle start${starts.length===1?'':'s'} logged</div>`;
   }
 
   function renderKnownFoods() {
@@ -512,7 +691,7 @@
     const label = document.getElementById('photoLabel');
     const preview = document.getElementById('photoPreview');
     const file = input.files[0];
-    if (!file) { pendingPhoto = null; preview.classList.add('hidden'); label.innerText = '📷 Attach a photo of the meal (optional)'; return; }
+    if (!file) { pendingPhoto = null; preview.classList.add('hidden'); label.innerText = '📷 Attach a photo (optional)'; return; }
 
     label.innerText = '📷 ' + file.name;
     preview.src = URL.createObjectURL(file);
@@ -529,7 +708,7 @@
     pendingPhoto = null;
     document.getElementById('photoInput').value = '';
     document.getElementById('photoPreview').classList.add('hidden');
-    document.getElementById('photoLabel').innerText = '📷 Attach a photo of the meal (optional)';
+    document.getElementById('photoLabel').innerText = '📷 Attach a photo (optional)';
   }
 
   const PRIMARY_MODEL = 'gemini-2.5-flash-lite';
@@ -569,40 +748,51 @@
     throw lastErr || new Error('Gemini request failed after one retry.');
   }
 
-  async function callGemini(text, photo) {
+  async function callGemini(text, photo, entryDate = todayStr()) {
     const knownFoodsList = knownFoods.length
       ? knownFoods.map(f => `- "${f.name}": ${f.calories} kcal, ${f.protein}g protein${f.notes ? ' (' + f.notes + ')' : ''}`).join('\n')
       : null;
+    const activeGoals = goals.filter(g => g.active !== false).map(g => ({ key:g.key, label:g.label }));
+    const now = new Date();
+    const localNow = `${todayStr()} ${now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12:false})}`;
 
-    const promptText = `Parse this food/activity log into JSON.
+    const promptText = `Parse this free-form personal log into structured JSON. It may describe food, exercise, a watch/workout screenshot, sleep, symptoms, menstruation/cycle events, medication/supplements, mood, or ordinary life events.
 
-Rules:
-- If exact amounts aren't given, estimate on the higher side for calories and portion sizes rather than underestimating — the user is tracking to lose weight and prefers to overcount intake when unsure.
-- If a photo is attached, identify the food and estimate realistic portion sizes from it, combined with any text given.
-- If any alcoholic drinks are mentioned, estimate alcohol_units using standard UK alcohol units (1 unit = 10ml/8g pure alcohol) based on typical drink size and ABV — e.g. a standard 175ml glass of wine (~12% ABV) is about 2.1 units, a pint of regular beer (~4-5% ABV) is about 2-2.3 units, a single 25ml spirit shot (~40% ABV) is about 1 unit. Estimate generously on the higher side if exact size/strength isn't given. 0 if no alcohol is mentioned.
-- Keep the summary short and plain.
-- Also assess the meal's nutritional quality (skip/zero these if the log isn't food, e.g. it's exercise or a check-in note):
-  - fibre_grams: estimated grams of fibre (number)
-  - protein_quality / fibre_quality / healthy_fats_quality / satiety_quality: one of "Low", "Moderate", "High", "Excellent"
-  - vegetable_servings / fruit_servings: estimated servings (number, can be 0)
-  - processed_level: one of "Low", "Moderate", "High" (how processed/refined the food is — lower is better)
-  - whole_foods_pct: rough % of the meal that's whole/minimally processed food (0-100)
-  - satisfaction_note: if the raw text mentions enjoyment, fullness, cravings, whether it felt worth it, or how satisfying it was, extract a short phrase; otherwise null
-${knownFoodsList ? `\nThis person has a list of previously saved "known foods" with verified nutrition values:\n${knownFoodsList}\n\nIf the log clearly refers to one of these (exact match or close variant, e.g. same brand/dish), use its saved calories/protein values exactly, scaling proportionally if a different portion is mentioned (e.g. "half" = divide by 2). Only use a known food's numbers if you're confident it's the same item — otherwise estimate fresh as usual.` : ''}
+REFERENCE TIME:
+- The user is logging at local time ${localNow}.
+- The selected log date is ${entryDate}.
+- If they say "now", use the logging time on the selected date.
+- If they give a time like "around 10" or "10am", preserve that event time.
+- If they say "earlier" without a clock time, keep event_time null rather than inventing one.
 
-Return ONLY this JSON shape, no other text:
-{"summary": "short clean one-line description", "calories": null, "protein": null, "exercise_calories": null, "alcohol_units": null, "fibre_grams": null, "protein_quality": "Moderate", "fibre_quality": "Moderate", "vegetable_servings": null, "fruit_servings": null, "healthy_fats_quality": "Moderate", "processed_level": "Moderate", "whole_foods_pct": 50, "satiety_quality": "Moderate", "satisfaction_note": null}
+SEPARATION RULES — IMPORTANT:
+- Extract what was actually stated. Do NOT decide that a symptom was caused by food, exercise, menstruation, or anything else.
+- Example: "I'm bloated today" is a symptom event only. Do not label it menstrual or food-related unless the user explicitly connects it.
+- Example: "cramps because my period started" can contain both a symptom and a period-start event because the user connected them.
+- Preserve neutral event data now; correlations are analyzed later across many entries.
+- Do not infer a menstrual phase from symptoms in an individual log.
 
-Text log: "${text || '(none — see photo)'}"`;
+FOOD / EXERCISE:
+- If exact food amounts aren't given, estimate on the higher side for calories and portions rather than underestimating.
+- If a photo is attached, inspect it. It may be food OR a watch/workout screen. Extract visible workout metrics when present (duration, calories, heart rate, distance, etc.).
+- Alcohol uses UK units (1 unit = 10ml/8g pure alcohol); estimate generously if needed. Use 0 only when food/drink is clearly logged and no alcohol is present; otherwise null.
+- Nutritional quality fields should be null for non-food logs.
+${knownFoodsList ? `\nKNOWN FOODS:\n${knownFoodsList}\nUse saved calories/protein exactly only when clearly the same item, scaling for portion.` : ''}
+
+GOALS:
+Active goals are ${JSON.stringify(activeGoals)}.
+Return goal_keys only when the log clearly establishes that goal happened on the selected date. Do not award a star from implication or wishful language. A post-meal walk must actually be described as after/post-meal, not just any walk.
+
+EVENT TYPES may include: food, exercise, sleep, symptom, period_start, period_flow, spotting, medication, supplement, mood, measurement, life_event, other. Create multiple events when one log contains multiple distinct facts. event_time should be an ISO local datetime like "2026-10-02T10:00:00" when known, otherwise null. Keep details as a small JSON object with only facts actually stated or visible.
+
+Return ONLY this JSON shape:
+{"summary":"short clean one-line description","calories":null,"protein":null,"exercise_calories":null,"alcohol_units":null,"fibre_grams":null,"protein_quality":null,"fibre_quality":null,"vegetable_servings":null,"fruit_servings":null,"healthy_fats_quality":null,"processed_level":null,"whole_foods_pct":null,"satiety_quality":null,"satisfaction_note":null,"goal_keys":[],"events":[{"type":"symptom","event_time":null,"details":{"symptom":"bloating","severity":null}}]}
+
+Text log: "${text || '(none — inspect photo)'}"`;
 
     const parts = [{ text: promptText }];
     if (photo) parts.push({ inlineData: { mimeType: photo.mimeType, data: photo.base64 } });
-
-    const body = JSON.stringify({
-      contents: [{ parts }],
-      generationConfig: { responseMimeType: "application/json" }
-    });
-
+    const body = JSON.stringify({ contents: [{ parts }], generationConfig: { responseMimeType: "application/json" } });
     const response = await callGeminiWithRetry(body);
     const data = await response.json();
     return JSON.parse(data.candidates[0].content.parts[0].text);
@@ -639,7 +829,7 @@ Text log: "${text || '(none — see photo)'}"`;
     for (const entry of missing) {
       status.innerText = `Processing ${done + 1} of ${missing.length}...`;
       try {
-        const parsed = await callGemini(entry.raw_text, null);
+        const parsed = await callGemini(entry.raw_text, null, entry.entry_date);
 
         const updates = {
           summary: entry.summary || parsed.summary || entry.raw_text,
@@ -656,7 +846,9 @@ Text log: "${text || '(none — see photo)'}"`;
           processed_level: entry.processed_level || parsed.processed_level || null,
           whole_foods_pct: entry.whole_foods_pct == null && parsed.whole_foods_pct != null ? Math.round(Number(parsed.whole_foods_pct)) : entry.whole_foods_pct,
           satiety_quality: entry.satiety_quality || parsed.satiety_quality || null,
-          satisfaction_note: entry.satisfaction_note || parsed.satisfaction_note || null
+          satisfaction_note: entry.satisfaction_note || parsed.satisfaction_note || null,
+          event_data: entry.event_data || { events: Array.isArray(parsed.events) ? parsed.events : [] },
+          goal_keys: (Array.isArray(entry.goal_keys) && entry.goal_keys.length) ? entry.goal_keys : (Array.isArray(parsed.goal_keys) ? parsed.goal_keys : [])
         };
 
         const { error } = await supabaseClient.from('entries').update(updates).eq('id', entry.id);
@@ -693,7 +885,7 @@ Text log: "${text || '(none — see photo)'}"`;
 
     if (localStorage.getItem('gemini_key')) {
       try {
-        parsed = await callGemini(text, pendingPhoto);
+        parsed = await callGemini(text, pendingPhoto, dateEl.value || todayStr());
       } catch (err) {
         aiFailed = true;
         showBanner('AI unavailable. Saved raw entry for backfill later: ' + err.message, 'warn');
@@ -726,6 +918,9 @@ Text log: "${text || '(none — see photo)'}"`;
         satiety_quality: parsed?.satiety_quality || null,
         satisfaction_note: parsed?.satisfaction_note || null,
         satisfaction_level: satisfactionLevel,
+        logged_at: new Date().toISOString(),
+        event_data: parsed ? { events: Array.isArray(parsed.events) ? parsed.events : [] } : { events: [] },
+        goal_keys: parsed && Array.isArray(parsed.goal_keys) ? parsed.goal_keys : [],
       });
       if (error) throw new Error('Supabase insert failed: ' + error.message);
 
@@ -740,8 +935,13 @@ Text log: "${text || '(none — see photo)'}"`;
         showBanner('Saved: ' + summary, 'warn');
         showNutrientOverview(parsed);
         lastParsed = parsed;
-        document.getElementById('knownFoodName').value = summary;
-        document.getElementById('saveKnownPrompt').classList.remove('hidden');
+        if (numericOrNull(parsed.calories) !== null || numericOrNull(parsed.protein) !== null) {
+          document.getElementById('knownFoodName').value = summary;
+          document.getElementById('saveKnownPrompt').classList.remove('hidden');
+        } else {
+          document.getElementById('saveKnownPrompt').classList.add('hidden');
+        }
+        await fetchGoals();
       }
 
     } catch (err) {
@@ -766,6 +966,8 @@ Text log: "${text || '(none — see photo)'}"`;
   }
 
   function render() {
+    renderGoals();
+    renderCycleOverview();
     const today = todayStr();
 
     // Today's totals
@@ -774,23 +976,26 @@ Text log: "${text || '(none — see photo)'}"`;
     document.getElementById('todayProtein').innerText = displayNumber(sumKnown(todays, 'protein'));
     document.getElementById('todayBurned').innerText = displayNumber(sumKnown(todays, 'exercise_calories'));
 
-    // Active range chart and summary
-    const days = Array.from({ length: activeTrendDays }, (_, i) => dateNDaysAgo(activeTrendDays - 1 - i));
-    const dayTotals = days.map(d => {
+    const todayFibre = sumKnown(todays, 'fibre_grams');
+    const todayPlants = todays.length
+      ? todays.reduce((s, e) => s + (numericOrNull(e.vegetable_servings) || 0) + (numericOrNull(e.fruit_servings) || 0), 0)
+      : null;
+    document.getElementById('todayQuality').innerText =
+      'Fibre: ' + qualityFromAverage(todayFibre, { moderate: 8, high: 12 }) +
+      ' · Fruit & veg: ' + qualityFromAverage(todayPlants, { moderate: 3, high: 5 });
+
+    // Calorie chart always stays fixed to the last 7 days.
+    const chartDays = Array.from({ length: 7 }, (_, i) => dateNDaysAgo(6 - i));
+    const chartTotals = chartDays.map(d => {
       const dayEntries = entries.filter(e => e.entry_date === d);
       return sumKnown(dayEntries, 'calories');
     });
-    const knownDayTotals = dayTotals.filter(c => c !== null);
-    const maxCal = Math.max(...knownDayTotals, 1);
+    const knownChartTotals = chartTotals.filter(c => c !== null);
+    const maxCal = Math.max(...knownChartTotals, 1);
 
-    document.getElementById('chartRangeLabel').innerText = activeTrendDays + ' days';
-    document.getElementById('trendRangeLabel').innerText = 'Last ' + activeTrendDays + ' days';
-
-    document.getElementById('weekChart').innerHTML = days.map((d, i) => {
-      const label = activeTrendDays === 7
-        ? new Date(d).toLocaleDateString(undefined, { weekday: 'short' })
-        : new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-      const value = dayTotals[i];
+    document.getElementById('weekChart').innerHTML = chartDays.map((d, i) => {
+      const label = new Date(d).toLocaleDateString(undefined, { weekday: 'short' });
+      const value = chartTotals[i];
       const pct = value === null ? 0 : Math.round((value / maxCal) * 100);
       return `
         <div class="flex items-center gap-2 text-[10px]">
@@ -799,6 +1004,10 @@ Text log: "${text || '(none — see photo)'}"`;
           <span class="w-10 text-right text-stone-500">${value === null ? '—' : Math.round(value)}</span>
         </div>`;
     }).join('');
+
+    // Summary range can toggle between 7 and 30 days.
+    const days = Array.from({ length: activeTrendDays }, (_, i) => dateNDaysAgo(activeTrendDays - 1 - i));
+    document.getElementById('trendRangeLabel').innerText = 'Last ' + activeTrendDays + ' days';
 
     const rangeEntries = entries.filter(e => days.includes(e.entry_date));
     const rangeCheckins = checkins.filter(c => days.includes(c.entry_date));
@@ -900,34 +1109,39 @@ Text log: "${text || '(none — see photo)'}"`;
     const btn = document.getElementById('insightsBtn');
     if (!localStorage.getItem('gemini_key')) { box.innerText = 'Add your Gemini API key in Settings first.'; return; }
 
-    const cutoff = dateNDaysAgo(30);
-    const recent = entries.filter(e => e.entry_date >= cutoff)
-      .map(e => ({ date: e.entry_date, summary: e.summary, calories: e.calories, protein: e.protein, exercise_calories: e.exercise_calories, alcohol_units: e.alcohol_units, fibre_grams: e.fibre_grams, vegetable_servings: e.vegetable_servings, processed_level: e.processed_level, satiety_quality: e.satiety_quality, satisfaction_level: e.satisfaction_level, satisfaction_note: e.satisfaction_note }));
-    const recentCheckins = checkins.filter(c => c.entry_date >= cutoff)
-      .map(c => ({ date: c.entry_date, scope: c.scope, energy: c.energy, hunger: c.hunger, sleep: c.sleep, note: c.note }));
+    const cutoff = dateNDaysAgo(activeTrendDays);
+    const recent = entries.filter(e => e.entry_date >= cutoff).map(e => ({
+      date:e.entry_date, logged_at:e.logged_at || e.created_at, raw_text:e.raw_text, summary:e.summary,
+      calories:e.calories, protein:e.protein, exercise_calories:e.exercise_calories, alcohol_units:e.alcohol_units,
+      fibre_grams:e.fibre_grams, vegetable_servings:e.vegetable_servings, fruit_servings:e.fruit_servings,
+      processed_level:e.processed_level, satiety_quality:e.satiety_quality, satisfaction_level:e.satisfaction_level,
+      satisfaction_note:e.satisfaction_note, goal_keys:e.goal_keys || [], events:parsedEvents(e)
+    }));
+    const recentCheckins = checkins.filter(c => c.entry_date >= cutoff).map(c => ({ date:c.entry_date, created_at:c.created_at, scope:c.scope, energy:c.energy, hunger:c.hunger, sleep:c.sleep, note:c.note }));
+    const question = document.getElementById('insightQuestion').value.trim();
+    if (recent.length < 3 && recentCheckins.length < 3) { box.innerText = 'Log a few more entries before patterns become meaningful.'; return; }
 
-    if (recent.length < 3 && recentCheckins.length < 3) { box.innerText = 'Log a few more days before patterns become meaningful.'; return; }
-
-    btn.disabled = true;
-    btn.innerText = 'ANALYZING...';
+    btn.disabled = true; btn.innerText = 'ANALYZING...';
     try {
-      const prompt = `Here are someone's last 30 days of food/exercise logs as JSON: ${JSON.stringify(recent)}.
-And their energy/hunger/sleep check-ins (1-5 scale, "moment" = a snapshot at some point in the day, "day_overall" = their summary of the whole day, sleep refers to the night before that date) as JSON: ${JSON.stringify(recentCheckins)}.
+      const prompt = `Analyze this person's ${activeTrendDays}-day personal log. Entries: ${JSON.stringify(recent)}. Check-ins: ${JSON.stringify(recentCheckins)}.
 
-Find 2-4 real, specific patterns or correlations — especially ones linking how they felt (energy/hunger/sleep) to what they ate, exercised, or noted (e.g. "energy tends to be higher on days you exercised the day before", "low energy often follows light-protein dinners", "hunger spikes on days with a skipped or small breakfast", "sleep tends to be worse after high-alcohol days", "you report feeling sluggish after meals heavy in processed food"). Also look at satisfaction_note for whether higher-calorie or indulgent meals were rated worth it vs not. Also include food-only patterns if relevant (e.g. low protein after exercise days, which meals contribute most calories, fibre intake variability, weekday vs weekend differences). Be direct and practical, like a friend pointing something out — not clinical, not vague. If nothing meaningful stands out, say so plainly instead of inventing patterns.
-Return ONLY a JSON array of short strings, each under 18 words, no other text.`;
+${question ? `Their question is: "${question}"` : 'Find 2-4 specific patterns or correlations that are genuinely supported by the data.'}
 
-      const body = JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } });
-      const res = await callGeminiWithRetry(body);
-      const data = await res.json();
+Rules:
+- Treat food, symptoms, cycle events, exercise, sleep, supplements/medications, and goals as separate observations unless the data supports an association across repeated occasions.
+- Never turn same-day co-occurrence into causation. Say "coincided with", "was reported on", or "tended to occur" rather than "caused".
+- Quantify when possible: numerator/denominator, percentage, average, or number of observations. Make clear when the sample is small.
+- For questions like bloating after pizza, compare pizza occasions with bloating reports in a reasonable same-day/next-day window and state the count.
+- Menstrual phases may be estimated only from logged period starts and cycle lengths. Label phase estimates as estimates, not biological confirmation. Do not infer ovulation from symptoms alone.
+- If there is insufficient evidence, say so plainly.
+- Be concise, practical, and non-clinical. Do not diagnose.
+Return ONLY a JSON array of 1-4 strings, each under 32 words.`;
+      const body = JSON.stringify({ contents:[{parts:[{text:prompt}]}], generationConfig:{responseMimeType:'application/json'} });
+      const res = await callGeminiWithRetry(body); const data = await res.json();
       const insights = JSON.parse(data.candidates[0].content.parts[0].text);
       box.innerHTML = '<ul class="list-disc pl-4 space-y-1.5">' + insights.map(i => `<li>${i}</li>`).join('') + '</ul>';
-    } catch (err) {
-      box.innerText = 'Could not generate insights: ' + err.message;
-    } finally {
-      btn.disabled = false;
-      btn.innerText = 'ANALYZE';
-    }
+    } catch (err) { box.innerText = 'Could not generate insights: ' + err.message; }
+    finally { btn.disabled=false; btn.innerText='ANALYZE'; }
   }
 
   document.getElementById('entryDate').value = todayStr();
