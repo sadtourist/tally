@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Tally</title>
+<title>Tally v5</title>
 <link rel="icon" type="image/png" href="icon-512.png">
 <link rel="apple-touch-icon" href="icon-512.png">
 <meta name="theme-color" content="#ffffff">
@@ -92,7 +92,7 @@
     </div>
   </div>
 
-  <div id="banner" class="hidden mb-4 p-3 rounded text-xs leading-relaxed"></div>
+  <div id="banner" class="hidden mb-4 p-3 rounded text-xs leading-relaxed relative pr-9"></div>
 
   <div id="authGate" class="hidden border border-stone-200 bg-stone-50 rounded-xl p-4 mb-6 flex-col gap-3 text-xs">
     <div><div class="text-[10px] font-black tracking-wider text-stone-500 uppercase">🔐 Private Tally</div><p class="text-stone-400 text-[10px] mt-1 leading-relaxed">Sign in before Tally can read or write any personal data.</p></div>
@@ -394,13 +394,19 @@
     box.classList.remove('hidden');
   }
 
+  let bannerTimer = null;
   function showBanner(msg, kind) {
     const b = document.getElementById('banner');
+    if (bannerTimer) clearTimeout(bannerTimer);
     b.classList.remove('hidden', 'bg-red-50', 'text-red-700', 'border', 'border-red-200', 'bg-amber-50', 'text-amber-700', 'border-amber-200');
     b.classList.add(...(kind === 'error' ? ['bg-red-50', 'text-red-700', 'border', 'border-red-200'] : ['bg-amber-50', 'text-amber-700', 'border', 'border-amber-200']));
-    b.innerText = msg;
+    b.innerHTML = `<span>${escapeHtml(msg)}</span><button type="button" onclick="clearBanner()" aria-label="Dismiss" class="absolute right-3 top-2 text-lg leading-none opacity-50 hover:opacity-100">×</button>`;
+    bannerTimer = setTimeout(clearBanner, 10000);
   }
-  function clearBanner() { document.getElementById('banner').classList.add('hidden'); }
+  function clearBanner() {
+    if (bannerTimer) { clearTimeout(bannerTimer); bannerTimer = null; }
+    document.getElementById('banner').classList.add('hidden');
+  }
 
   function toggleSettings() { document.getElementById('settings').classList.toggle('hidden'); }
 
@@ -432,9 +438,14 @@
   }
 
   function saveSettings() {
+    const sbKey = document.getElementById('sbKey').value.trim();
+    if (sbKey.startsWith('sb_secret_')) {
+      showBanner('That is a Supabase secret key. Tally only accepts the publishable / anon key.', 'error');
+      return;
+    }
     localStorage.setItem('gemini_key', document.getElementById('geminiKey').value.trim());
     localStorage.setItem('sb_url', document.getElementById('sbUrl').value.trim());
-    localStorage.setItem('sb_key', document.getElementById('sbKey').value.trim());
+    localStorage.setItem('sb_key', sbKey);
     toggleSettings();
     initSupabase();
   }
@@ -445,6 +456,7 @@
     const url = document.getElementById('sbUrl').value.trim() || localStorage.getItem('sb_url');
     const key = document.getElementById('sbKey').value.trim() || localStorage.getItem('sb_key');
     if (!url || !key) { status.innerText = '❌ Add the Supabase URL and publishable/anon key first.'; return; }
+    if (key.startsWith('sb_secret_')) { status.innerText = '❌ This is a Supabase secret key. Use the publishable / anon key instead.'; return; }
     btn.disabled = true; btn.innerText = 'TESTING...';
     try {
       const client = supabase.createClient(url, key);
@@ -490,7 +502,7 @@
     const btn=document.getElementById('signInBtn'); btn.disabled=true; btn.innerText='SIGNING IN...';
     const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
     btn.disabled=false; btn.innerText='SIGN IN';
-    if (error) { document.getElementById('authStatus').innerText='❌ '+error.message; return; }
+    if (error) { document.getElementById('authStatus').innerText='❌ Supabase sign-in failed: '+error.message; return; }
     document.getElementById('authStatus').innerText='';
     await handleSignedIn(data.user);
   }
@@ -869,6 +881,8 @@ REFERENCE TIME:
 - If they say "now", use the logging time on the selected date.
 - If they give a time like "around 10" or "10am", preserve that event time.
 - If they say "earlier" without a clock time, keep event_time null rather than inventing one.
+- EVERY event must have event_date in YYYY-MM-DD. Resolve "today", "yesterday", "last night", named weekdays, and explicit dates relative to the selected log date (${entryDate}), not the browser's current date.
+- The entry may be submitted today while describing something that happened earlier. event_date is when it happened; the database entry/log date is only when it was filed.
 
 SEPARATION RULES — IMPORTANT:
 - Extract what was actually stated. Do NOT decide that a symptom was caused by food, exercise, menstruation, or anything else.
@@ -890,16 +904,25 @@ FOOD / EXERCISE:
 - If one or more photos are attached, inspect ALL of them together as part of this single log entry. They may show multiple foods, labels, receipts, or watch/workout screens. Combine information across the photos without double-counting the same item. Extract visible workout metrics when present (duration, calories, heart rate, distance, etc.).
 - Alcohol uses UK units (1 unit = 10ml/8g pure alcohol); estimate generously if needed. Use 0 only when food/drink is clearly logged and no alcohol is present; otherwise null.
 - Nutritional quality fields should be null for non-food logs.
-${knownFoodsList ? `\nKNOWN FOODS:\n${knownFoodsList}\nUse saved calories/protein exactly only when clearly the same item, scaling for portion.` : ''}
+- Parse a meal into separate food components first, then resolve each component, then total the meal.
+- If the user writes "(known food)" or "(known foods)" beside an item, treat that as an explicit instruction to match that item against KNOWN FOODS first and scale the saved nutrition to the stated quantity. Do not replace a reasonable known-food match with a generic estimate.
+- If the user writes "(image attached)" beside an item, treat that as an explicit instruction to use the attached nutrition label/photo for that item.
+- These parenthetical hints are optional; still use known foods and attached labels automatically when the match is clear.
+- For EACH food event/component, put its resolved calories, protein_g, fibre_g, vegetable_servings and fruit_servings in event details when known. Use null when genuinely unknown.
+- For EACH exercise event, put calories_burned in event details when known.
+- Top-level nutrition is the combined total of all food components in this log.
+${knownFoodsList ? `\nKNOWN FOODS:\n${knownFoodsList}\nUse all saved nutrition fields when clearly the same item, scaling proportionally for the portion. Names do not need to be character-for-character identical.` : ''}
 
 GOALS:
 Active goals are ${JSON.stringify(activeGoals)}.
 Return goal_keys only when the log clearly establishes that goal happened on the selected date. Do not award a star from implication or wishful language. A post-meal walk must actually be described as after/post-meal, not just any walk.
 
-EVENT TYPES may include: food, exercise, sleep, symptom, period_start, period_flow, spotting, medication, supplement, mood, measurement, life_event, day_status, other. Create multiple events when one log contains multiple distinct facts. event_time should be an ISO local datetime like "2026-10-02T10:00:00" when known, otherwise null. Keep details as a small JSON object with only facts actually stated or visible.
+EVENT TYPES may include: food, exercise, sleep, symptom, period_start, period_flow, spotting, medication, supplement, mood, measurement, life_event, day_status, other. Create multiple events when one log contains multiple distinct facts. Every event needs event_date. event_time should be an ISO local datetime like "2026-10-02T10:00:00" when known, otherwise null. Keep details compact but include resolved nutrition on food components and calories_burned on exercise events.
+
+Set suggest_known_food true only when the log is essentially one reusable food/meal that would sensibly be saved as one Known Food. Set it false for mixed meals made from several components, especially when some components already came from Known Foods or an attached label.
 
 Return ONLY this JSON shape:
-{"summary":"short clean one-line description","calories":null,"protein":null,"exercise_calories":null,"alcohol_units":null,"fibre_grams":null,"protein_quality":null,"fibre_quality":null,"vegetable_servings":null,"fruit_servings":null,"healthy_fats_quality":null,"processed_level":null,"whole_foods_pct":null,"satiety_quality":null,"satisfaction_note":null,"goal_keys":[],"events":[{"type":"symptom","event_time":null,"details":{"symptom":"bloating","severity":null}}]}
+{"summary":"short clean one-line description","calories":null,"protein":null,"exercise_calories":null,"alcohol_units":null,"fibre_grams":null,"protein_quality":null,"fibre_quality":null,"vegetable_servings":null,"fruit_servings":null,"healthy_fats_quality":null,"processed_level":null,"whole_foods_pct":null,"satiety_quality":null,"satisfaction_note":null,"suggest_known_food":false,"goal_keys":[],"events":[{"type":"food","event_date":"2026-10-02","event_time":null,"details":{"item":"orange","calories":null,"protein_g":null,"fibre_g":null,"vegetable_servings":0,"fruit_servings":0.5}}]}
 
 Text log: "${text || '(none — inspect attached photos)'}"`;
 
@@ -1011,7 +1034,8 @@ Text log: "${text || '(none — inspect attached photos)'}"`;
     }
 
     const satisfactionRaw = document.getElementById('satisfactionLevel').value;
-    const satisfactionLevel = satisfactionRaw === '' ? null : Number(satisfactionRaw);
+    const hasFoodEvent = parsed && Array.isArray(parsed.events) && parsed.events.some(ev => ev.type === 'food');
+    const satisfactionLevel = (satisfactionRaw === '' || !hasFoodEvent) ? null : Number(satisfactionRaw);
     const summary = parsed?.summary || text || '(photo only — needs analysis)';
 
     try {
@@ -1050,7 +1074,7 @@ Text log: "${text || '(none — inspect attached photos)'}"`;
         showBanner('Saved: ' + summary, 'warn');
         showNutrientOverview(parsed);
         lastParsed = parsed;
-        if (numericOrNull(parsed.calories) !== null || numericOrNull(parsed.protein) !== null) {
+        if (parsed.suggest_known_food === true && (numericOrNull(parsed.calories) !== null || numericOrNull(parsed.protein) !== null)) {
           document.getElementById('knownFoodName').value = summary;
           document.getElementById('saveKnownPrompt').classList.remove('hidden');
         } else {
@@ -1094,30 +1118,64 @@ Text log: "${text || '(none — inspect attached photos)'}"`;
     return map;
   }
 
+  function eventDate(ev, fallbackDate) {
+    return ev?.event_date || (ev?.event_time ? String(ev.event_time).slice(0,10) : null) || fallbackDate;
+  }
+
+  function entryHasDatedFoodNutrition(e) {
+    return parsedEvents(e).some(ev => ev.type === 'food' && ev.event_date && ['calories','protein_g','fibre_g','vegetable_servings','fruit_servings'].some(k => numericOrNull(ev.details?.[k]) !== null));
+  }
+
+  function entryHasDatedExerciseNutrition(e) {
+    return parsedEvents(e).some(ev => ev.type === 'exercise' && ev.event_date && numericOrNull(ev.details?.calories_burned) !== null);
+  }
+
+  function totalsForDate(date) {
+    const totals = { calories:null, protein:null, fibre_grams:null, vegetable_servings:null, fruit_servings:null, exercise_calories:null };
+    const add = (key, value) => { const n=numericOrNull(value); if (n===null) return; totals[key]=(totals[key]===null?0:totals[key])+n; };
+    for (const e of entries) {
+      const events = parsedEvents(e);
+      const useFoodEvents = entryHasDatedFoodNutrition(e);
+      const useExerciseEvents = entryHasDatedExerciseNutrition(e);
+      if (useFoodEvents) {
+        for (const ev of events.filter(x => x.type === 'food' && eventDate(x,e.entry_date) === date)) {
+          add('calories', ev.details?.calories); add('protein', ev.details?.protein_g); add('fibre_grams', ev.details?.fibre_g);
+          add('vegetable_servings', ev.details?.vegetable_servings); add('fruit_servings', ev.details?.fruit_servings);
+        }
+      } else if (e.entry_date === date) {
+        add('calories',e.calories); add('protein',e.protein); add('fibre_grams',e.fibre_grams); add('vegetable_servings',e.vegetable_servings); add('fruit_servings',e.fruit_servings);
+      }
+      if (useExerciseEvents) {
+        for (const ev of events.filter(x => x.type === 'exercise' && eventDate(x,e.entry_date) === date)) add('exercise_calories', ev.details?.calories_burned);
+      } else if (e.entry_date === date) add('exercise_calories', e.exercise_calories);
+    }
+    return totals;
+  }
+
+  const DAILY_FIBRE_REFERENCE = 25;
+  const DAILY_PLANT_REFERENCE = 5;
+
   function render() {
     renderGoals();
     renderCycleOverview();
     const today = todayStr();
 
     // Today's totals
-    const todays = entries.filter(e => e.entry_date === today);
-    document.getElementById('todayCal').innerText = displayNumber(sumKnown(todays, 'calories'));
-    document.getElementById('todayProtein').innerText = displayNumber(sumKnown(todays, 'protein'));
-    document.getElementById('todayBurned').innerText = displayNumber(sumKnown(todays, 'exercise_calories'));
+    const todayTotals = totalsForDate(today);
+    document.getElementById('todayCal').innerText = displayNumber(todayTotals.calories);
+    document.getElementById('todayProtein').innerText = displayNumber(todayTotals.protein);
+    document.getElementById('todayBurned').innerText = displayNumber(todayTotals.exercise_calories);
 
-    const todayFibre = sumKnown(todays, 'fibre_grams');
-    const todayPlants = todays.length
-      ? todays.reduce((s, e) => s + (numericOrNull(e.vegetable_servings) || 0) + (numericOrNull(e.fruit_servings) || 0), 0)
-      : null;
+    const todayFibre = todayTotals.fibre_grams;
+    const todayPlants = (todayTotals.vegetable_servings === null && todayTotals.fruit_servings === null) ? null : (todayTotals.vegetable_servings || 0) + (todayTotals.fruit_servings || 0);
     document.getElementById('todayQuality').innerText =
-      'Fibre: ' + qualityFromAverage(todayFibre, { moderate: 8, high: 12 }) +
-      ' · Fruit & veg: ' + qualityFromAverage(todayPlants, { moderate: 3, high: 5 });
+      'Fibre: ' + (todayFibre === null ? '—' : todayFibre.toFixed(1).replace(/\.0$/,'') + ' / ' + DAILY_FIBRE_REFERENCE + 'g') +
+      ' · Fruit & veg: ' + (todayPlants === null ? '—' : todayPlants.toFixed(1).replace(/\.0$/,'') + ' / ' + DAILY_PLANT_REFERENCE + ' servings');
 
     // Calorie chart always stays fixed to the last 7 days.
     const chartDays = Array.from({ length: 7 }, (_, i) => dateNDaysAgo(6 - i));
     const chartTotals = chartDays.map(d => {
-      const dayEntries = entries.filter(e => e.entry_date === d);
-      return sumKnown(dayEntries, 'calories');
+      return totalsForDate(d).calories;
     });
     const knownChartTotals = chartTotals.filter(c => c !== null);
     const maxCal = Math.max(...knownChartTotals, 1);
@@ -1143,15 +1201,15 @@ Text log: "${text || '(none — inspect attached photos)'}"`;
     const rangeEntries = entries.filter(e => days.includes(e.entry_date));
     const rangeCheckins = checkins.filter(c => days.includes(c.entry_date));
     const daysLogged = new Set(rangeEntries.map(e => e.entry_date)).size;
-    const knownDayTotals = usableDays.map(d => sumKnown(entries.filter(e => e.entry_date === d), 'calories')).filter(v => v !== null);
+    const knownDayTotals = usableDays.map(d => totalsForDate(d).calories).filter(v => v !== null);
     const daysWithKnownCalories = knownDayTotals.length;
 
     const avgCal = daysWithKnownCalories
       ? knownDayTotals.reduce((a, b) => a + b, 0) / daysWithKnownCalories
       : null;
 
-    const proteinTotals = usableDays.map(d => sumKnown(entries.filter(e => e.entry_date === d), 'protein')).filter(v => v !== null);
-    const fibreTotals = usableDays.map(d => sumKnown(entries.filter(e => e.entry_date === d), 'fibre_grams')).filter(v => v !== null);
+    const proteinTotals = usableDays.map(d => totalsForDate(d).protein).filter(v => v !== null);
+    const fibreTotals = usableDays.map(d => totalsForDate(d).fibre_grams).filter(v => v !== null);
 
     const avgProtein = proteinTotals.length ? proteinTotals.reduce((a, b) => a + b, 0) / proteinTotals.length : null;
     const avgFibre = fibreTotals.length ? fibreTotals.reduce((a, b) => a + b, 0) / fibreTotals.length : null;
@@ -1161,9 +1219,8 @@ Text log: "${text || '(none — inspect attached photos)'}"`;
     const alcoholTotal = sumKnown(rangeEntries, 'alcohol_units');
     const usableRangeEntries = rangeEntries.filter(e => statuses[e.entry_date] !== 'incomplete');
     const usableLoggedDays = new Set(usableRangeEntries.map(e => e.entry_date)).size;
-    const avgPlants = usableRangeEntries.length
-      ? usableRangeEntries.reduce((s, e) => s + (numericOrNull(e.vegetable_servings) || 0) + (numericOrNull(e.fruit_servings) || 0), 0) / Math.max(usableLoggedDays, 1)
-      : null;
+    const plantTotals = usableDays.map(d => { const t=totalsForDate(d); return (t.vegetable_servings===null && t.fruit_servings===null) ? null : (t.vegetable_servings||0)+(t.fruit_servings||0); }).filter(v => v !== null);
+    const avgPlants = plantTotals.length ? plantTotals.reduce((a,b)=>a+b,0)/plantTotals.length : null;
 
     document.getElementById('rangeAvgCal').innerText = avgCal === null ? '—' : Math.round(avgCal);
     document.getElementById('rangeAvgProtein').innerText = avgProtein === null ? '—' : Math.round(avgProtein) + 'g';
@@ -1173,8 +1230,8 @@ Text log: "${text || '(none — inspect attached photos)'}"`;
     document.getElementById('rangeAvgSleep').innerText = avgSleep === null ? '—' : avgSleep.toFixed(1) + '/5';
     document.getElementById('rangeDaysLogged').innerText = daysLogged + '/' + activeTrendDays;
     document.getElementById('rangeAlcoholUnits').innerText = alcoholTotal === null ? '—' : alcoholTotal.toFixed(1).replace(/\.0$/, '') + ' units';
-    document.getElementById('rangeFibreQuality').innerText = qualityFromAverage(avgFibre, { moderate: 20, high: 28 });
-    document.getElementById('rangePlantsQuality').innerText = qualityFromAverage(avgPlants, { moderate: 3, high: 5 });
+    document.getElementById('rangeFibreQuality').innerText = avgFibre === null ? '—' : avgFibre.toFixed(1).replace(/\.0$/,'') + 'g/day';
+    document.getElementById('rangePlantsQuality').innerText = avgPlants === null ? '—' : avgPlants.toFixed(1).replace(/\.0$/,'') + ' servings/day';
 
     // Feed (entries + check-ins merged, newest first)
     const feed = document.getElementById('feed');
@@ -1212,7 +1269,8 @@ Text log: "${text || '(none — inspect attached photos)'}"`;
         displayNumber(e.protein, 'g protein')
       ];
       if (numericOrNull(e.fibre_grams) !== null) metrics.push(displayNumber(e.fibre_grams, 'g fibre'));
-      if (numericOrNull(e.satisfaction_level) !== null) metrics.push('satisfaction ' + e.satisfaction_level + '/5');
+      const foodLike = parsedEvents(e).some(ev => ev.type === 'food') || numericOrNull(e.calories) !== null || numericOrNull(e.protein) !== null;
+      if (foodLike && numericOrNull(e.satisfaction_level) !== null) metrics.push('satisfaction ' + e.satisfaction_level + '/5');
       if (numericOrNull(e.exercise_calories) !== null && Number(e.exercise_calories) !== 0) metrics.push(displayNumber(e.exercise_calories, ' burned'));
       if (numericOrNull(e.alcohol_units) !== null && Number(e.alcohol_units) !== 0) metrics.push(e.alcohol_units + ' alcohol units');
 
@@ -1220,7 +1278,7 @@ Text log: "${text || '(none — inspect attached photos)'}"`;
         <div class="border border-stone-200 p-3 rounded text-xs space-y-1.5">
           <div class="flex justify-between items-start gap-2">
             <span class="font-sans text-stone-900">${e.summary || e.raw_text}</span>
-            <button onclick="deleteEntry('${e.id}')" class="text-stone-300 hover:text-red-500 text-[10px] shrink-0">✕</button>
+            <span class="flex gap-2 shrink-0"><button onclick="reanalyzeEntry('${e.id}')" title="Re-analyze" class="text-stone-300 hover:text-stone-700 text-[11px]">↻</button><button onclick="deleteEntry('${e.id}')" class="text-stone-300 hover:text-red-500 text-[10px]">✕</button></span>
           </div>
           ${e.satisfaction_note ? `<div class="font-sans text-stone-500 italic">${e.satisfaction_note}</div>` : ''}
           <div class="flex justify-between text-[10px] text-stone-400">
@@ -1229,6 +1287,28 @@ Text log: "${text || '(none — inspect attached photos)'}"`;
           </div>
         </div>`;
     }).join('') + (totalCount > FEED_LIMIT ? `<p class="text-[10px] text-stone-300 text-center pt-2">Showing most recent ${FEED_LIMIT} of ${totalCount} — older entries are still saved.</p>` : '');
+  }
+
+  async function reanalyzeEntry(id) {
+    if (!supabaseClient || !localStorage.getItem('gemini_key')) { showBanner('Add your Gemini API key in Settings first.', 'error'); return; }
+    const entry = entries.find(e => e.id === id);
+    if (!entry) return;
+    try {
+      showBanner('Re-analyzing entry…', 'warn');
+      const parsed = await callGemini(entry.raw_text || '', null, entry.entry_date || todayStr());
+      const patch = {
+        summary: parsed.summary || entry.summary, calories: numericOrNull(parsed.calories), protein: numericOrNull(parsed.protein),
+        exercise_calories: numericOrNull(parsed.exercise_calories), alcohol_units: numericOrNull(parsed.alcohol_units), fibre_grams: numericOrNull(parsed.fibre_grams),
+        protein_quality: parsed.protein_quality || null, fibre_quality: parsed.fibre_quality || null, vegetable_servings: numericOrNull(parsed.vegetable_servings),
+        fruit_servings: numericOrNull(parsed.fruit_servings), healthy_fats_quality: parsed.healthy_fats_quality || null, processed_level: parsed.processed_level || null,
+        whole_foods_pct: numericOrNull(parsed.whole_foods_pct), satiety_quality: parsed.satiety_quality || null, satisfaction_note: parsed.satisfaction_note || null,
+        event_data: { events: Array.isArray(parsed.events) ? parsed.events : [] }, goal_keys: Array.isArray(parsed.goal_keys) ? parsed.goal_keys : []
+      };
+      const { error } = await supabaseClient.from('entries').update(patch).eq('id', id);
+      if (error) throw error;
+      await fetchEntries();
+      showBanner('Re-analyzed: ' + (parsed.summary || entry.summary || 'entry'), 'warn');
+    } catch (err) { showBanner('Could not re-analyze: ' + err.message, 'error'); }
   }
 
   async function deleteCheckin(id) {
