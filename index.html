@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Tally v5</title>
+<title>Tally</title>
 <link rel="icon" type="image/png" href="icon-512.png">
 <link rel="apple-touch-icon" href="icon-512.png">
 <meta name="theme-color" content="#ffffff">
@@ -210,7 +210,7 @@
         <span class="text-[9px] text-stone-300 uppercase">Auto-filled from your log</span>
       </div>
       <div id="goalChart" class="overflow-x-auto border border-stone-200 rounded-lg bg-white"></div>
-      <p class="text-[10px] text-stone-400 mt-2 leading-relaxed">★ means Tally found that goal in something you logged. ☆ means it didn't. No score, no streak judgment.</p>
+      <p class="text-[10px] text-stone-400 mt-2 leading-relaxed">★ means Tally found that goal in your log. Numeric goals such as Fruit/Veg and Fibre use the daily amounts Tally calculated. ☆ means it didn't. No score, no streak judgment.</p>
     </div>
 
     <div class="border-t border-stone-100 pt-4">
@@ -395,6 +395,10 @@
   }
 
   let bannerTimer = null;
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  }
+
   function showBanner(msg, kind) {
     const b = document.getElementById('banner');
     if (bannerTimer) clearTimeout(bannerTimer);
@@ -651,7 +655,10 @@
     const el = document.getElementById('newGoalLabel');
     const label = el.value.trim();
     if (!label || !supabaseClient) return;
-    const { error } = await supabaseClient.from('goals').insert({ key: slugifyGoal(label), label, active: true, sort_order: goals.length });
+    const key = slugifyGoal(label);
+    const payload = { key, label, goal_key: key, name: label, active: true, sort_order: goals.length };
+    if (currentUser?.id) payload.user_id = currentUser.id;
+    const { error } = await supabaseClient.from('goals').insert(payload);
     if (error) { showBanner('Could not add goal: ' + error.message, 'error'); return; }
     el.value = '';
     await fetchGoals();
@@ -681,11 +688,25 @@
     const matched = new Map();
     for (const e of entries) {
       const keys = Array.isArray(e.goal_keys) ? e.goal_keys : [];
-      for (const key of keys) matched.set(e.entry_date + '|' + key, true);
+      for (const key of keys) {
+        const eventDates = parsedEvents(e).map(ev => eventDate(ev, e.entry_date)).filter(Boolean);
+        const datesForGoal = eventDates.length ? [...new Set(eventDates)] : [e.entry_date];
+        for (const d of datesForGoal) matched.set(d + '|' + key, true);
+      }
     }
+    const goalHit = (g, d) => {
+      const label = String(g.label || g.name || '').toLowerCase();
+      const t = totalsForDate(d);
+      if (/fruit|veg|vegetable/.test(label)) {
+        const plants = (t.vegetable_servings === null && t.fruit_servings === null) ? null : (t.vegetable_servings || 0) + (t.fruit_servings || 0);
+        return plants !== null && plants >= DAILY_PLANT_REFERENCE;
+      }
+      if (/fibre|fiber/.test(label)) return t.fibre_grams !== null && t.fibre_grams >= DAILY_FIBRE_REFERENCE;
+      return matched.get(d + '|' + g.key) === true;
+    };
     if (!active.length) { chart.innerHTML = '<p class="p-4 text-xs text-stone-300 italic">Add a goal to start your chart.</p>'; return; }
     const head = dates.map(d => { const x=new Date(d+'T12:00:00'); return `<th class="min-w-8 px-1 py-2 text-[8px] text-stone-400 font-normal"><div>${x.toLocaleDateString(undefined,{weekday:'narrow'})}</div><div>${x.getDate()}</div></th>`; }).join('');
-    const rows = active.map(g => `<tr class="border-t border-stone-100"><td class="sticky left-0 bg-white px-2 py-2 text-[10px] whitespace-nowrap font-bold">${goalEmoji(g.label)} ${g.label}</td>${dates.map(d => `<td class="text-center px-1 py-2 text-sm ${matched.get(d+'|'+g.key) ? 'text-stone-900' : 'text-stone-200'}">${matched.get(d+'|'+g.key) ? '★' : '☆'}</td>`).join('')}</tr>`).join('');
+    const rows = active.map(g => `<tr class="border-t border-stone-100"><td class="sticky left-0 bg-white px-2 py-2 text-[10px] whitespace-nowrap font-bold">${goalEmoji(g.label)} ${g.label}</td>${dates.map(d => `<td class="text-center px-1 py-2 text-sm ${goalHit(g,d) ? 'text-stone-900' : 'text-stone-200'}">${goalHit(g,d) ? '★' : '☆'}</td>`).join('')}</tr>`).join('');
     chart.innerHTML = `<table class="min-w-max w-full"><thead><tr><th class="sticky left-0 bg-white min-w-28"></th>${head}</tr></thead><tbody>${rows}</tbody></table>`;
   }
 
@@ -738,7 +759,21 @@
       return;
     }
     list.innerHTML = knownFoods.map(f => `
-      <div class="border-b border-stone-100 py-1"><div>${f.name}</div><div class="text-[9px] text-stone-300">${[f.calories != null ? f.calories + ' kcal' : '', f.protein != null ? f.protein + 'g protein' : '', f.fibre != null ? f.fibre + 'g fibre' : ''].filter(Boolean).join(' · ')}</div></div>`).join('');
+      <div class="border-b border-stone-100 py-1 flex justify-between items-start gap-3">
+        <div><div>${escapeHtml(f.name)}</div><div class="text-[9px] text-stone-300">${[f.calories != null ? f.calories + ' kcal' : '', f.protein != null ? f.protein + 'g protein' : '', f.fibre != null ? f.fibre + 'g fibre' : ''].filter(Boolean).join(' · ')}</div></div>
+        <button type="button" onclick="deleteKnownFood('${f.id}')" title="Delete known food" class="text-stone-300 hover:text-red-500 text-[10px] shrink-0">✕</button>
+      </div>`).join('');
+  }
+
+  async function deleteKnownFood(id) {
+    if (!supabaseClient) return;
+    const food = knownFoods.find(f => f.id === id);
+    if (!food) return;
+    if (!confirm(`Delete known food “${food.name}”?`)) return;
+    const { error } = await supabaseClient.from('known_foods').delete().eq('id', id);
+    if (error) { showBanner('Could not delete known food: ' + error.message, 'error'); return; }
+    await fetchKnownFoods();
+    showBanner('Deleted known food: ' + food.name, 'warn');
   }
 
   async function addManualKnownFood() {
@@ -757,9 +792,9 @@
     if (!name) { showBanner('Give the known food a name first.', 'error'); return; }
     if (!supabaseClient) return;
 
-    const { error } = await supabaseClient.from('known_foods').insert({
-      name, calories, protein, carbs, fat, fibre, sugar, notes: notes || null
-    });
+    const payload = { name, calories, protein, carbs, fat, fibre, sugar, notes: notes || null };
+    if (currentUser?.id) payload.user_id = currentUser.id;
+    const { error } = await supabaseClient.from('known_foods').insert(payload);
     if (error) { showBanner('Could not save known food: ' + error.message, 'error'); return; }
 
     ['mkName','mkCalories','mkProtein','mkCarbs','mkFat','mkFibre','mkSugar','mkNotes'].forEach(id => document.getElementById(id).value = '');
@@ -775,7 +810,7 @@
   async function confirmSaveKnownFood() {
     const name = document.getElementById('knownFoodName').value.trim();
     if (!name || !lastParsed || !supabaseClient) return;
-    const { error } = await supabaseClient.from('known_foods').insert({
+    const payload = {
       name,
       calories: numericOrNull(lastParsed.calories),
       protein: numericOrNull(lastParsed.protein),
@@ -784,7 +819,9 @@
       fibre: numericOrNull(lastParsed.fibre_grams),
       sugar: numericOrNull(lastParsed.sugar),
       notes: lastParsed.notes || null
-    });
+    };
+    if (currentUser?.id) payload.user_id = currentUser.id;
+    const { error } = await supabaseClient.from('known_foods').insert(payload);
     if (error) { showBanner('Could not save known food: ' + error.message, 'error'); return; }
     dismissSaveKnownPrompt();
     await fetchKnownFoods();
@@ -1039,7 +1076,7 @@ Text log: "${text || '(none — inspect attached photos)'}"`;
     const summary = parsed?.summary || text || '(photo only — needs analysis)';
 
     try {
-      const { error } = await supabaseClient.from('entries').insert({
+      const entryPayload = {
         entry_date: dateEl.value || todayStr(),
         raw_text: text || '(photo only)',
         summary,
@@ -1061,7 +1098,9 @@ Text log: "${text || '(none — inspect attached photos)'}"`;
         logged_at: new Date().toISOString(),
         event_data: parsed ? { events: Array.isArray(parsed.events) ? parsed.events : [] } : { events: [] },
         goal_keys: parsed && Array.isArray(parsed.goal_keys) ? parsed.goal_keys : [],
-      });
+      };
+      if (currentUser?.id) entryPayload.user_id = currentUser.id;
+      const { error } = await supabaseClient.from('entries').insert(entryPayload);
       if (error) throw new Error('Supabase insert failed: ' + error.message);
 
       txtEl.value = '';
