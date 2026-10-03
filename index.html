@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Tally</title>
+<title>Tally v5</title>
 <link rel="icon" type="image/png" href="icon-512.png">
 <link rel="apple-touch-icon" href="icon-512.png">
 <meta name="theme-color" content="#ffffff">
@@ -681,10 +681,23 @@
     const chart = document.getElementById('goalChart');
     if (!list || !chart) return;
     const active = goals.filter(g => g.active !== false);
-    list.innerHTML = active.length ? active.map(g => `<div class="flex justify-between items-center border-b border-stone-100 py-1.5 text-xs"><span>${goalEmoji(g.label)} ${g.label}</span><button onclick="archiveGoal('${g.id}')" class="text-[9px] uppercase tracking-wider text-stone-300 hover:text-stone-700">Archive</button></div>`).join('') : '<p class="text-xs text-stone-300 italic">No active goals yet.</p>';
+    const goalDisplay = (g) => {
+      const label = String(g.label || g.name || '').trim();
+      const low = label.toLowerCase();
+      if (/fruit|veg|vegetable/.test(low)) return { short:'Fruit & veg', detail:'5 servings/day' };
+      if (/fibre|fiber/.test(low)) return { short:'Fibre', detail:'25g/day' };
+      if (/post[- ]?meal/.test(low)) return { short:'Post-meal walk', detail:'1/day' };
+      if (/exercise|workout/.test(low)) return { short:'Exercise', detail:'1/day' };
+      if (/vitamin/.test(low)) return { short:'Vitamins', detail:'1/day' };
+      const cleaned = label.replace(/\s*\([^)]*\)\s*$/, '').trim() || label;
+      const criterion = (label.match(/\(([^)]*)\)\s*$/) || [])[1] || '';
+      return { short: cleaned, detail: criterion };
+    };
+    list.innerHTML = active.length ? active.map(g => { const gd=goalDisplay(g); return `<div class="flex justify-between items-center border-b border-stone-100 py-1.5 text-xs gap-3"><span>${goalEmoji(g.label)} <span class="font-medium">${gd.short}</span>${gd.detail ? `<span class="text-stone-400 ml-2">${gd.detail}</span>` : ''}</span><button onclick="archiveGoal('${g.id}')" class="text-[9px] uppercase tracking-wider text-stone-300 hover:text-stone-700">Archive</button></div>`; }).join('') : '<p class="text-xs text-stone-300 italic">No active goals yet.</p>';
 
+    // Most useful days first: today, yesterday, then backwards in time.
     const dates = [];
-    for (let i=13;i>=0;i--) dates.push(localDateNDaysAgo(i));
+    for (let i=0;i<14;i++) dates.push(localDateNDaysAgo(i));
     const matched = new Map();
     for (const e of entries) {
       const keys = Array.isArray(e.goal_keys) ? e.goal_keys : [];
@@ -705,8 +718,8 @@
       return matched.get(d + '|' + g.key) === true;
     };
     if (!active.length) { chart.innerHTML = '<p class="p-4 text-xs text-stone-300 italic">Add a goal to start your chart.</p>'; return; }
-    const head = dates.map(d => { const x=new Date(d+'T12:00:00'); return `<th class="min-w-8 px-1 py-2 text-[8px] text-stone-400 font-normal"><div>${x.toLocaleDateString(undefined,{weekday:'narrow'})}</div><div>${x.getDate()}</div></th>`; }).join('');
-    const rows = active.map(g => `<tr class="border-t border-stone-100"><td class="sticky left-0 bg-white px-2 py-2 text-[10px] whitespace-nowrap font-bold">${goalEmoji(g.label)} ${g.label}</td>${dates.map(d => `<td class="text-center px-1 py-2 text-sm ${goalHit(g,d) ? 'text-stone-900' : 'text-stone-200'}">${goalHit(g,d) ? '★' : '☆'}</td>`).join('')}</tr>`).join('');
+    const head = dates.map((d,idx) => { const x=new Date(d+'T12:00:00'); return `<th class="min-w-8 px-1 py-2 text-[8px] ${idx===0 ? 'text-stone-700 font-bold' : 'text-stone-400 font-normal'}"><div>${idx===0 ? 'NOW' : x.toLocaleDateString(undefined,{weekday:'narrow'})}</div><div>${x.getDate()}</div></th>`; }).join('');
+    const rows = active.map(g => { const gd=goalDisplay(g); return `<tr class="border-t border-stone-100"><td class="sticky left-0 bg-white px-2 py-2 text-[10px] whitespace-nowrap font-bold">${goalEmoji(g.label)} ${gd.short}</td>${dates.map((d,idx) => `<td class="text-center px-1 py-2 text-sm ${goalHit(g,d) ? 'text-stone-900' : 'text-stone-200'} ${idx===0 ? 'bg-stone-50' : ''}">${goalHit(g,d) ? '★' : '☆'}</td>`).join('')}</tr>`; }).join('');
     chart.innerHTML = `<table class="min-w-max w-full"><thead><tr><th class="sticky left-0 bg-white min-w-28"></th>${head}</tr></thead><tbody>${rows}</tbody></table>`;
   }
 
@@ -1373,25 +1386,31 @@ Text log: "${text || '(none — inspect attached photos)'}"`;
     const recentCheckins = checkins.filter(c => c.entry_date >= cutoff).map(c => ({ date:c.entry_date, created_at:c.created_at, scope:c.scope, energy:c.energy, hunger:c.hunger, sleep:c.sleep, note:c.note }));
     const statuses = dayStatusMap();
     const question = document.getElementById('insightQuestion').value.trim();
-    if (recent.length < 3 && recentCheckins.length < 3) { box.innerText = 'Log a few more entries before patterns become meaningful.'; return; }
+    if (!recent.length && !recentCheckins.length) { box.innerText = 'Nothing logged in this period yet.'; return; }
 
     btn.disabled = true; btn.innerText = 'ANALYZING...';
     try {
-      const prompt = `Analyze this person's ${activeTrendDays}-day personal log. Entries: ${JSON.stringify(recent)}. Check-ins: ${JSON.stringify(recentCheckins)}. Day-status map: ${JSON.stringify(statuses)}.
+      const prompt = `You are Tally's long-term pattern analyst. Analyze this person's ${activeTrendDays}-day personal log as a longitudinal record, not as a collection of isolated daily coincidences. Entries: ${JSON.stringify(recent)}. Check-ins: ${JSON.stringify(recentCheckins)}. Day-status map: ${JSON.stringify(statuses)}.
 
-${question ? `Their question is: "${question}"` : 'Find 2-4 specific patterns or correlations that are genuinely supported by the data.'}
+${question ? `Their question is: "${question}"` : 'Give 2-4 useful observations about recurring routines, changes over time, established patterns, or meaningful shifts in the record.'}
 
 Rules:
-- Treat food, symptoms, cycle events, exercise, sleep, supplements/medications, and goals as separate observations unless the data supports an association across repeated occasions.
-- A day marked incomplete is partial data. Never treat its calories, protein, fibre, fruit/vegetable intake, alcohol, or other logged quantities as the person's full-day total. It may still be used as an observation that a specific logged event happened.
-- A day without an explicit status is unknown, not confirmed complete. Be cautious about calling its logged quantities full-day totals.
-- Never turn same-day co-occurrence into causation. Say "coincided with", "was reported on", or "tended to occur" rather than "caused".
-- Quantify when possible: numerator/denominator, percentage, average, or number of observations. Make clear when the sample is small.
-- For questions like bloating after pizza, compare pizza occasions with bloating reports in a reasonable same-day/next-day window and state the count.
-- Menstrual phases may be estimated only from logged period starts and cycle lengths. Label phase estimates as estimates, not biological confirmation. Do not infer ovulation from symptoms alone.
-- If there is insufficient evidence, say so plainly.
-- Be concise, practical, and non-clinical. Do not diagnose.
-Return ONLY a JSON array of 1-4 strings, each under 32 words.`;
+- Think broadly across time. Prioritize routines, frequency, repeated foods/meals, portion changes, exercise frequency, nutrition averages, sleep patterns, recurring symptoms, cycle context, medication/supplement changes, and changes from the person's own earlier baseline.
+- Prefer human time language such as "recently", "over the past two weeks", "on weekends", "earlier in your logs", or "since you logged X". Do not mention exact calendar dates unless the date itself is important to understanding a major anchor event.
+- Anchor events (for example a medication change, IUD removal, period start, travel, illness, or a new routine) may be used to compare BEFORE vs AFTER. A change after an anchor is temporal context, not proof that the anchor caused it. Say "since" or "after you logged", never "because of" unless the user explicitly reported causation.
+- NEVER manufacture a relationship from one or two co-occurrences. Exercise and bloating on the same day are separate facts unless a relationship repeats across multiple independent occasions.
+- Do not say a food, drink, exercise, medication, cycle event, or other item "contributed to", "led to", "caused", or "resulted in" a feeling/symptom unless the user explicitly said that relationship themselves.
+- For a NEW association between two different things, require at least 3 independent repeated occasions. Quantify the evidence when useful (for example, "4 of 5 logged occasions"). If there are fewer than 3, do not present it as an association.
+- Repeating an already well-supported pattern is GOOD. You do not need to invent novelty every time Analyze is pressed. If the strongest useful observation is familiar, state it again and update it with the latest data.
+- With a small dataset, favor simple descriptive observations that are unquestionably supported: what is commonly eaten, typical portions, which days routines occur, what has increased/decreased, and what the person logs most often.
+- Look for changes in the SAME behavior over time (for example, a usual weekend baguette lunch changing from 4 open-faced halves to 3) even when there is no health correlation involved.
+- Treat food, symptoms, cycle events, exercise, sleep, supplements/medications, and goals as separate observations unless the repeated-data rule above supports an association.
+- A day marked incomplete is partial data. Never treat its calories, protein, fibre, fruit/vegetable intake, alcohol, or other logged quantities as the person's full-day total. A day without explicit status is unknown, not confirmed complete.
+- Menstrual phases may be estimated only from logged period starts and cycle lengths. Label estimates as estimates. Do not infer ovulation from symptoms alone.
+- Never diagnose. Do not moralize food, body size, calories, or missed goals.
+- Write directly to the person using "you/your", not "the person".
+- Insights should sound like a thoughtful summary of their life over time, not a clinical event report.
+Return ONLY a JSON array of 2-4 strings, each under 38 words.`;
       const body = JSON.stringify({ contents:[{parts:[{text:prompt}]}], generationConfig:{responseMimeType:'application/json'} });
       const res = await callGeminiWithRetry(body); const data = await res.json();
       const insights = JSON.parse(data.candidates[0].content.parts[0].text);
