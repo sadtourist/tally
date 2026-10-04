@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Tally v5</title>
+<title>Tally</title>
 <link rel="icon" type="image/png" href="icon-512.png">
 <link rel="apple-touch-icon" href="icon-512.png">
 <meta name="theme-color" content="#ffffff">
@@ -108,7 +108,7 @@
     <form onsubmit="addEntry(event)" class="flex flex-col gap-3">
       <div class="flex justify-between items-center">
         <span class="text-[10px] font-bold tracking-wider text-stone-400 uppercase">📝 New Entry</span>
-        <input type="date" id="entryDate" class="text-xs border border-stone-200 rounded px-2 py-0.5 bg-stone-50">
+        <div class="flex gap-1"><input type="date" id="entryDate" class="text-xs border border-stone-200 rounded px-2 py-0.5 bg-stone-50"><input type="time" id="entryTime" class="text-xs border border-stone-200 rounded px-2 py-0.5 bg-stone-50" title="Optional time"></div>
       </div>
       <textarea id="rawText" rows="4" placeholder="Type anything: food, workout, symptoms, period, sleep, vitamins..."
         class="w-full p-3 border border-stone-200 rounded-lg text-xs font-mono focus:outline-none focus:border-stone-900 resize-none"></textarea>
@@ -126,7 +126,7 @@
           <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option>
         </select>
       </div>
-      <button type="submit" id="submitBtn" class="bg-stone-900 text-white font-bold text-xs px-6 py-2.5 rounded uppercase tracking-wider">Add Entry</button>
+      <div class="flex gap-2"><button type="submit" id="submitBtn" class="flex-1 bg-stone-900 text-white font-bold text-xs px-6 py-2.5 rounded uppercase tracking-wider">Add Entry</button><button type="button" id="cancelEditBtn" onclick="cancelEditEntry()" class="hidden border border-stone-300 text-stone-500 font-bold text-xs px-4 py-2.5 rounded uppercase tracking-wider">Cancel</button></div>
     </form>
 
     <div id="nutrientOverview" class="hidden border border-stone-200 rounded-lg p-3 text-xs flex flex-col gap-1"></div>
@@ -137,46 +137,6 @@
       <div class="flex gap-2">
         <button onclick="confirmSaveKnownFood()" class="flex-1 bg-stone-900 text-white text-[10px] uppercase tracking-wider py-2 rounded">Save</button>
         <button onclick="dismissSaveKnownPrompt()" class="flex-1 text-stone-400 text-[10px] uppercase tracking-wider py-2 rounded border border-stone-200">Skip</button>
-      </div>
-    </div>
-
-    <div class="border-t border-stone-100 pt-3 flex flex-col gap-3">
-      <button onclick="toggleCheckin()" class="text-[10px] font-bold text-stone-400 uppercase tracking-wider text-left">💭 Check-in</button>
-      <div id="checkinPanel" class="hidden flex flex-col gap-3">
-        <div class="flex justify-end">
-          <input type="date" id="checkinDate" class="text-xs border border-stone-200 rounded px-2 py-0.5 bg-stone-50">
-        </div>
-
-        <div class="flex items-center gap-2 text-[11px] text-stone-500">
-          <span class="w-14 shrink-0">Energy</span>
-          <input type="range" min="1" max="5" value="3" id="energySlider" class="flex-1" oninput="document.getElementById('energyVal').innerText = this.value">
-          <span id="energyVal" class="w-3 shrink-0 text-right">3</span>
-        </div>
-
-        <div class="flex items-center gap-2 text-[11px] text-stone-500">
-          <span class="w-14 shrink-0">Hunger</span>
-          <input type="range" min="1" max="5" value="3" id="hungerSlider" class="flex-1" oninput="document.getElementById('hungerVal').innerText = this.value">
-          <span id="hungerVal" class="w-3 shrink-0 text-right">3</span>
-        </div>
-
-        <div class="flex items-center gap-2 text-[11px] text-stone-500">
-          <span class="w-14 shrink-0">Sleep</span>
-          <input type="range" min="1" max="5" value="3" id="sleepSlider" class="flex-1" oninput="document.getElementById('sleepVal').innerText = this.value">
-          <span id="sleepVal" class="w-3 shrink-0 text-right">3</span>
-        </div>
-
-        <textarea id="checkinNote" rows="2" placeholder="Commentary (optional)"
-          class="w-full p-2 border border-stone-200 rounded-lg text-xs font-mono focus:outline-none focus:border-stone-900 resize-none"></textarea>
-
-        <label class="flex items-center gap-2 text-[11px] text-stone-400">
-          <input type="checkbox" id="checkinDayOverall">
-          This reflects my whole day, not just right now
-        </label>
-
-         <p class="text-[10px] text-stone-300 -mt-2">Note: Sleep refers to the night before this date.</p>
-
-
-        <button onclick="addCheckin()" id="checkinBtn" class="bg-stone-900 text-white font-bold text-xs px-6 py-2.5 rounded uppercase tracking-wider">Log Check-in</button>
       </div>
     </div>
 
@@ -211,6 +171,12 @@
       </div>
       <div id="goalChart" class="overflow-x-auto border border-stone-200 rounded-lg bg-white"></div>
       <p class="text-[10px] text-stone-400 mt-2 leading-relaxed">★ means Tally found that goal in your log. Numeric goals such as Fruit/Veg and Fibre use the daily amounts Tally calculated. ☆ means it didn't. No score, no streak judgment.</p>
+    </div>
+
+    <div class="border-t border-stone-100 pt-4">
+      <div class="flex justify-between items-center mb-2"><h3 class="text-[10px] font-black tracking-wider text-stone-400 uppercase">🗂️ Logging overview</h3><span class="text-[9px] text-stone-300 uppercase">Last 14 days</span></div>
+      <div id="loggingOverview" class="overflow-x-auto border border-stone-200 rounded-lg bg-white"></div>
+      <p class="text-[10px] text-stone-400 mt-2 leading-relaxed">✓ means Tally has something logged in that category. — means nothing is recorded; it does not mean it did not happen.</p>
     </div>
 
     <div class="border-t border-stone-100 pt-4">
@@ -320,6 +286,7 @@
   let pendingPhotos = []; // [{ base64, mimeType, name }]
   let currentUser = null;
   let authSubscription = null;
+  let editingEntryId = null;
 
   function todayStr() { return new Date().toISOString().split('T')[0]; }
 
@@ -682,7 +649,7 @@
     const goalDisplay = (g) => {
       const label = String(g.label || g.name || '').trim();
       const low = label.toLowerCase();
-      if (/fruit|veg|vegetable/.test(low)) return { short:'Fruit & veg', detail:'5 servings/day' };
+      if (/fruit|veg|vegetable/.test(low)) return { short:'Fruit & veg', detail:'5s/day' };
       if (/fibre|fiber/.test(low)) return { short:'Fibre', detail:'25g/day' };
       if (/post[- ]?meal/.test(low)) return { short:'Post-meal walk', detail:'1/day' };
       if (/exercise|workout/.test(low)) return { short:'Exercise', detail:'1/day' };
@@ -715,10 +682,29 @@
       if (/fibre|fiber/.test(label)) return t.fibre_grams !== null && t.fibre_grams >= DAILY_FIBRE_REFERENCE;
       return matched.get(d + '|' + g.key) === true;
     };
-    if (!active.length) { chart.innerHTML = '<p class="p-4 text-xs text-stone-300 italic">Add a goal to start your chart.</p>'; return; }
+    if (!active.length) { chart.innerHTML = '<p class="p-4 text-xs text-stone-300 italic">Add a goal to start your chart.</p>'; renderLoggingOverview(dates); return; }
     const head = dates.map((d,idx) => { const x=new Date(d+'T12:00:00'); return `<th class="min-w-8 px-1 py-2 text-[8px] ${idx===0 ? 'text-stone-700 font-bold' : 'text-stone-400 font-normal'}"><div>${idx===0 ? 'NOW' : x.toLocaleDateString(undefined,{weekday:'narrow'})}</div><div>${x.getDate()}</div></th>`; }).join('');
     const rows = active.map(g => { const gd=goalDisplay(g); return `<tr class="border-t border-stone-100"><td class="sticky left-0 bg-white px-2 py-2 text-[10px] whitespace-nowrap font-bold">${goalEmoji(g.label)} ${gd.short}</td>${dates.map((d,idx) => `<td class="text-center px-1 py-2 text-sm ${goalHit(g,d) ? 'text-stone-900' : 'text-stone-200'} ${idx===0 ? 'bg-stone-50' : ''}">${goalHit(g,d) ? '★' : '☆'}</td>`).join('')}</tr>`; }).join('');
     chart.innerHTML = `<table class="min-w-max w-full"><thead><tr><th class="sticky left-0 bg-white min-w-28"></th>${head}</tr></thead><tbody>${rows}</tbody></table>`;
+    renderLoggingOverview(dates);
+  }
+
+  function renderLoggingOverview(dates) {
+    const box = document.getElementById('loggingOverview');
+    if (!box) return;
+    const cats = [
+      ['Food', ev => ev.type === 'food'],
+      ['Exercise', ev => ev.type === 'exercise'],
+      ['Sleep', ev => ev.type === 'sleep'],
+      ['Alcohol', ev => ev.type === 'food' && numericOrNull(ev.details?.alcohol_units) > 0],
+      ['Cycle', ev => ['period_start','period_flow','spotting'].includes(ev.type)]
+    ];
+    const has = (date, test) => entries.some(e => parsedEvents(e).some(ev => eventDate(ev,e.entry_date) === date && test(ev)));
+    // Older entries may only have top-level alcohol totals.
+    const hasAlcohol = date => has(date, cats[3][1]) || entries.some(e => e.entry_date === date && numericOrNull(e.alcohol_units) > 0);
+    const head = dates.map((d,idx) => { const x=new Date(d+'T12:00:00'); return `<th class="min-w-8 px-1 py-2 text-[8px] ${idx===0?'text-stone-700 font-bold':'text-stone-400 font-normal'}"><div>${idx===0?'NOW':x.toLocaleDateString(undefined,{weekday:'narrow'})}</div><div>${x.getDate()}</div></th>`; }).join('');
+    const rows = cats.map(([label,test]) => `<tr class="border-t border-stone-100"><td class="sticky left-0 bg-white px-2 py-2 text-[10px] whitespace-nowrap font-bold">${label}</td>${dates.map((d,idx) => { const yes=label==='Alcohol'?hasAlcohol(d):has(d,test); return `<td class="text-center px-1 py-2 text-xs ${yes?'text-stone-900':'text-stone-200'} ${idx===0?'bg-stone-50':''}">${yes?'✓':'—'}</td>`; }).join('')}</tr>`).join('');
+    box.innerHTML = `<table class="min-w-max w-full"><thead><tr><th class="sticky left-0 bg-white min-w-20"></th>${head}</tr></thead><tbody>${rows}</tbody></table>`;
   }
 
   function parsedEvents(e) {
@@ -913,7 +899,7 @@
     throw lastErr || new Error('Gemini request failed after one retry.');
   }
 
-  async function callGemini(text, photos, entryDate = todayStr()) {
+  async function callGemini(text, photos, entryDate = todayStr(), entryTime = '') {
     const knownFoodsList = knownFoods.length
       ? knownFoods.map(f => `- "${f.name}": ${[f.calories != null ? f.calories + ' kcal' : '', f.protein != null ? f.protein + 'g protein' : '', f.carbs != null ? f.carbs + 'g carbs' : '', f.fat != null ? f.fat + 'g fat' : '', f.fibre != null ? f.fibre + 'g fibre' : '', f.sugar != null ? f.sugar + 'g sugar' : ''].filter(Boolean).join(', ')}${f.notes ? ' (' + f.notes + ')' : ''}`).join('\n')
       : null;
@@ -926,9 +912,11 @@
 REFERENCE TIME:
 - The user is logging at local time ${localNow}.
 - The selected log date is ${entryDate}.
+- The optional selected log time is ${entryTime || 'not set'}. If set and the text does not provide a more specific time, use it for the main event(s).
 - If they say "now", use the logging time on the selected date.
 - If they give a time like "around 10" or "10am", preserve that event time.
-- If they say "earlier" without a clock time, keep event_time null rather than inventing one.
+- If no exact time is stated or selected, infer a sensible approximate time from context so events can be ordered (for example breakfast ~08:00, lunch ~12:30, afternoon ~15:00, dinner ~19:00, after-dinner walk ~20:00, bedtime ~23:00). Prefer relational clues such as before/after another event.
+- event_time_source must be "explicit" when the user states the time, "selected" when the time picker supplies it, or "inferred" when you estimate it.
 - EVERY event must have event_date in YYYY-MM-DD. Resolve "today", "yesterday", "last night", named weekdays, and explicit dates relative to the selected log date (${entryDate}), not the browser's current date.
 - The entry may be submitted today while describing something that happened earlier. event_date is when it happened; the database entry/log date is only when it was filed.
 
@@ -983,12 +971,12 @@ GOALS:
 Active goals are ${JSON.stringify(activeGoals)}.
 Return goal_keys only when the log clearly establishes that goal happened on the selected date. Do not award a star from implication or wishful language. A post-meal walk must actually be described as after/post-meal, not just any walk.
 
-EVENT TYPES may include: food, exercise, sleep, symptom, period_start, period_flow, spotting, medication, supplement, mood, measurement, life_event, day_status, other. Create multiple events when one log contains multiple distinct facts. Every event needs event_date. event_time should be an ISO local datetime like "2026-10-02T10:00:00" when known, otherwise null. Keep details compact but include resolved nutrition on food components and calories_burned plus calories_burned_source on exercise events. A plain duration-based activity such as "walk for 20 minutes" is an exercise event and must receive an estimated calorie burn.
+EVENT TYPES may include: food, exercise, sleep, symptom, period_start, period_flow, spotting, medication, supplement, mood, measurement, life_event, day_status, other. Create multiple events when one log contains multiple distinct facts. Every event needs event_date and should normally have event_time as an ISO local datetime like "2026-10-02T10:00:00". Infer a sensible approximate time when needed for ordering. Include event_time_source as "explicit", "selected", or "inferred". Keep details compact but include resolved nutrition on food components and calories_burned plus calories_burned_source on exercise events. A plain duration-based activity such as "walk for 20 minutes" is an exercise event and must receive an estimated calorie burn.
 
 Set suggest_known_food true only when the log is essentially one reusable food/meal that would sensibly be saved as one Known Food. Set it false for mixed meals made from several components, especially when some components already came from Known Foods or an attached label.
 
 Return ONLY this JSON shape:
-{"summary":"short clean one-line description","calories":null,"protein":null,"exercise_calories":null,"alcohol_units":null,"fibre_grams":null,"protein_quality":null,"fibre_quality":null,"vegetable_servings":null,"fruit_servings":null,"healthy_fats_quality":null,"processed_level":null,"whole_foods_pct":null,"satiety_quality":null,"satisfaction_note":null,"suggest_known_food":false,"goal_keys":[],"events":[{"type":"food","event_date":"2026-10-02","event_time":null,"details":{"item":"orange","calories":null,"protein_g":null,"fibre_g":null,"vegetable_servings":0,"fruit_servings":0.5}}]}
+{"summary":"short clean one-line description","calories":null,"protein":null,"exercise_calories":null,"alcohol_units":null,"fibre_grams":null,"protein_quality":null,"fibre_quality":null,"vegetable_servings":null,"fruit_servings":null,"healthy_fats_quality":null,"processed_level":null,"whole_foods_pct":null,"satiety_quality":null,"satisfaction_note":null,"suggest_known_food":false,"goal_keys":[],"events":[{"type":"food","event_date":"2026-10-02","event_time":"2026-10-02T08:00:00","event_time_source":"inferred","details":{"item":"orange","calories":null,"protein_g":null,"fibre_g":null,"vegetable_servings":0,"fruit_servings":0.5}}]}
 
 Text log: "${text || '(none — inspect attached photos)'}"`;
 
@@ -1075,6 +1063,7 @@ Text log: "${text || '(none — inspect attached photos)'}"`;
     clearBanner();
     const txtEl = document.getElementById('rawText');
     const dateEl = document.getElementById('entryDate');
+    const timeEl = document.getElementById('entryTime');
     const btn = document.getElementById('submitBtn');
     const text = txtEl.value.trim();
 
@@ -1089,7 +1078,7 @@ Text log: "${text || '(none — inspect attached photos)'}"`;
 
     if (localStorage.getItem('gemini_key')) {
       try {
-        parsed = await callGemini(text, pendingPhotos, dateEl.value || todayStr());
+        parsed = await callGemini(text, pendingPhotos, dateEl.value || todayStr(), timeEl.value || '');
       } catch (err) {
         aiFailed = true;
         showBanner('AI unavailable. Saved raw entry for backfill later: ' + err.message, 'warn');
@@ -1129,17 +1118,28 @@ Text log: "${text || '(none — inspect attached photos)'}"`;
         goal_keys: parsed && Array.isArray(parsed.goal_keys) ? parsed.goal_keys : [],
       };
       if (currentUser?.id) entryPayload.user_id = currentUser.id;
-      const { error } = await supabaseClient.from('entries').insert(entryPayload);
-      if (error) throw new Error('Supabase insert failed: ' + error.message);
+      let error;
+      if (editingEntryId) {
+        delete entryPayload.user_id;
+        delete entryPayload.logged_at; // preserve original submission timestamp
+        ({ error } = await supabaseClient.from('entries').update(entryPayload).eq('id', editingEntryId));
+      } else {
+        ({ error } = await supabaseClient.from('entries').insert(entryPayload));
+      }
+      if (error) throw new Error((editingEntryId ? 'Supabase update failed: ' : 'Supabase insert failed: ') + error.message);
 
+      const wasEditing = !!editingEntryId;
+      editingEntryId = null;
       txtEl.value = '';
       clearPhoto();
       dateEl.value = todayStr();
+      timeEl.value = '';
+      document.getElementById('cancelEditBtn').classList.add('hidden');
       document.getElementById('satisfactionLevel').value = '';
       await fetchEntries();
 
       if (!aiFailed && parsed) {
-        showBanner('Saved: ' + summary, 'warn');
+        showBanner((wasEditing ? 'Updated: ' : 'Saved: ') + summary, 'warn');
         showNutrientOverview(parsed);
         lastParsed = parsed;
         if (parsed.suggest_known_food === true && (numericOrNull(parsed.calories) !== null || numericOrNull(parsed.protein) !== null)) {
@@ -1155,8 +1155,35 @@ Text log: "${text || '(none — inspect attached photos)'}"`;
       showBanner(err.message, 'error');
     } finally {
       btn.disabled = false;
-      btn.innerText = 'ADD ENTRY';
+      btn.innerText = editingEntryId ? 'SAVE CHANGES' : 'ADD ENTRY';
     }
+  }
+
+  function startEditEntry(id) {
+    const e = entries.find(x => x.id === id);
+    if (!e) return;
+    editingEntryId = id;
+    document.getElementById('rawText').value = e.raw_text || '';
+    document.getElementById('entryDate').value = e.entry_date || todayStr();
+    const times = parsedEvents(e).map(ev => ev.event_time).filter(Boolean).sort();
+    document.getElementById('entryTime').value = times.length ? String(times[times.length-1]).slice(11,16) : '';
+    document.getElementById('satisfactionLevel').value = numericOrNull(e.satisfaction_level) === null ? '' : String(e.satisfaction_level);
+    document.getElementById('submitBtn').innerText = 'SAVE CHANGES';
+    document.getElementById('cancelEditBtn').classList.remove('hidden');
+    switchView('log');
+    document.getElementById('rawText').focus();
+    window.scrollTo({top:0, behavior:'smooth'});
+  }
+
+  function cancelEditEntry() {
+    editingEntryId = null;
+    document.getElementById('rawText').value = '';
+    document.getElementById('entryDate').value = todayStr();
+    document.getElementById('entryTime').value = '';
+    document.getElementById('satisfactionLevel').value = '';
+    clearPhoto();
+    document.getElementById('submitBtn').innerText = 'ADD ENTRY';
+    document.getElementById('cancelEditBtn').classList.add('hidden');
   }
 
   async function deleteEntry(id) {
@@ -1222,6 +1249,14 @@ Text log: "${text || '(none — inspect attached photos)'}"`;
 
   const DAILY_FIBRE_REFERENCE = 25;
   const DAILY_PLANT_REFERENCE = 5;
+
+  function entryTimelineTime(e) {
+    const eventTimes = parsedEvents(e).map(ev => ev.event_time).filter(Boolean).sort();
+    if (eventTimes.length) return eventTimes[eventTimes.length - 1];
+    const d = e.entry_date || todayStr();
+    // Old entries without event times stay on their event date; creation time only breaks ties.
+    return d + 'T00:00:00';
+  }
 
   function render() {
     renderGoals();
@@ -1312,16 +1347,16 @@ Text log: "${text || '(none — inspect attached photos)'}"`;
     document.getElementById('rangeAvgFibre').innerText = avgFibre === null ? '—' : avgFibre.toFixed(1).replace(/\.0$/,'') + 'g/day';
     document.getElementById('rangePlantsQuality').innerText = avgPlants === null ? '—' : avgPlants.toFixed(1).replace(/\.0$/,'') + ' servings/day';
     document.getElementById('rangeAvgBurn').innerText = avgBurn === null ? '—' : Math.round(avgBurn) + ' kcal/day';
-    document.getElementById('rangeAvgSleep').innerText = avgSleep === null ? '—' : avgSleep.toFixed(1).replace(/\.0$/,'') + ' hr/night (' + sleepValues.length + ' night' + (sleepValues.length === 1 ? '' : 's') + ')';
+    document.getElementById('rangeAvgSleep').innerText = avgSleep === null ? '—' : avgSleep.toFixed(1).replace(/\.0$/,'') + ' hr/night (' + sleepValues.length + ')';
     document.getElementById('rangeDaysLogged').innerText = daysLogged + ' / ' + activeTrendDays;
     document.getElementById('rangeAlcoholUnits').innerText = alcoholTotal === null ? '—' : alcoholTotal.toFixed(1).replace(/\.0$/, '') + ' units total';
 
     // Feed (entries + check-ins merged, newest first)
     const feed = document.getElementById('feed');
     const feedItems = [
-      ...entries.map(e => ({ type: 'entry', date: e.entry_date, created_at: e.created_at, data: e })),
-      ...checkins.map(c => ({ type: 'checkin', date: c.entry_date, created_at: c.created_at, data: c }))
-    ].sort((a, b) => (b.date + b.created_at).localeCompare(a.date + a.created_at));
+      ...entries.map(e => { const sortTime=entryTimelineTime(e); return { type: 'entry', date: String(sortTime).slice(0,10), sort_time: sortTime, created_at: e.created_at, data: e }; }),
+      ...checkins.map(c => ({ type: 'checkin', date: c.entry_date, sort_time: c.entry_date + 'T00:00:00', created_at: c.created_at, data: c }))
+    ].sort((a, b) => String(b.sort_time || '').localeCompare(String(a.sort_time || '')) || String(b.created_at || '').localeCompare(String(a.created_at || '')));
 
     const totalCount = feedItems.length;
     const FEED_LIMIT = 12;
@@ -1361,7 +1396,7 @@ Text log: "${text || '(none — inspect attached photos)'}"`;
         <div class="border border-stone-200 p-3 rounded text-xs space-y-1.5">
           <div class="flex justify-between items-start gap-2">
             <span class="font-sans text-stone-900">${e.summary || e.raw_text}</span>
-            <span class="flex gap-2 shrink-0"><button onclick="reanalyzeEntry('${e.id}')" title="Re-analyze" class="text-stone-300 hover:text-stone-700 text-[11px]">↻</button><button onclick="deleteEntry('${e.id}')" class="text-stone-300 hover:text-red-500 text-[10px]">✕</button></span>
+            <span class="flex gap-2 shrink-0"><button onclick="startEditEntry('${e.id}')" title="Edit entry" class="text-stone-300 hover:text-stone-700 text-[11px]">✎</button><button onclick="reanalyzeEntry('${e.id}')" title="Re-analyze" class="text-stone-300 hover:text-stone-700 text-[11px]">↻</button><button onclick="deleteEntry('${e.id}')" title="Delete entry" class="text-stone-300 hover:text-red-500 text-[10px]">✕</button></span>
           </div>
           ${e.satisfaction_note ? `<div class="font-sans text-stone-500 italic">${e.satisfaction_note}</div>` : ''}
           <div class="flex justify-between text-[10px] text-stone-400">
@@ -1457,7 +1492,8 @@ Return ONLY a JSON array of 3-5 strings, each under 55 words.`;
   }
 
   document.getElementById('entryDate').value = todayStr();
-  document.getElementById('checkinDate').value = todayStr();
+  document.getElementById('entryTime').value = '';
+  if (document.getElementById('checkinDate')) document.getElementById('checkinDate').value = todayStr();
   loadSettingsIntoForm();
   initSupabase();
 </script>
