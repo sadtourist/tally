@@ -950,7 +950,10 @@ DAY COMPLETENESS:
 - Do not guess completeness when it was not stated.
 
 FOOD / EXERCISE:
-- If exact food amounts aren't given, estimate on the higher side for calories and portions rather than underestimating.
+- FOOD NUTRITION MUST BE ESTIMATED whenever a reasonable estimate is possible. Missing exact weights, brands, or quantities is NOT a reason to return null. For descriptions such as "a sandwich with cheese and turkey", "a bowl of pasta", "some butter", "a green smoothie", or "a slice of cheese", assume ordinary real-world portions and return sensible approximate nutrition.
+- Use null for food calories/protein/fibre only when there is essentially no usable information from which even a rough estimate can reasonably be made.
+- Prefer a useful approximate value over false absence. Do not invent implausible precision: round estimates sensibly.
+- When estimating uncertain portions, use a reasonable middle-to-slightly-higher estimate rather than systematically underestimating.
 - If one or more photos are attached, inspect ALL of them together as part of this single log entry. They may show multiple foods, labels, receipts, or watch/workout screens. Combine information across the photos without double-counting the same item. Extract visible workout metrics when present (duration, calories, heart rate, distance, etc.).
 - Alcohol uses UK units (1 unit = 10ml/8g pure alcohol); estimate generously if needed. Use 0 only when food/drink is clearly logged and no alcohol is present; otherwise null.
 - Nutritional quality fields should be null for non-food logs.
@@ -958,8 +961,16 @@ FOOD / EXERCISE:
 - If the user writes "(known food)" or "(known foods)" beside an item, treat that as an explicit instruction to match that item against KNOWN FOODS first and scale the saved nutrition to the stated quantity. Do not replace a reasonable known-food match with a generic estimate.
 - If the user writes "(image attached)" beside an item, treat that as an explicit instruction to use the attached nutrition label/photo for that item.
 - These parenthetical hints are optional; still use known foods and attached labels automatically when the match is clear.
-- For EACH food event/component, put its resolved calories, protein_g, fibre_g, vegetable_servings and fruit_servings in event details when known. Use null when genuinely unknown.
-- For EACH exercise event, put calories_burned in event details when known.
+- For EACH food event/component, put calories, protein_g, fibre_g, vegetable_servings and fruit_servings in event details. Use, in order: a clearly matching Known Food scaled to portion; an attached nutrition label/photo; otherwise a reasonable standard-portion estimate.
+- For a food log, top-level calories and protein should almost never be null. Estimate them from the described components when exact values are unavailable. Estimate fibre and fruit/vegetable servings too when the ingredients give a reasonable basis.
+- Only return null for a nutrition field when even a rough estimate would be baseless (for example, "I ate something" with no food description).
+- EXERCISE CALORIES MUST ALSO BE ESTIMATED whenever a reasonable estimate is possible. A duration plus an identifiable activity is enough to estimate. Do NOT return null merely because the user did not provide calories, heart rate, distance, pace, or intensity.
+- Examples that MUST receive a calorie estimate: "walk for 20 minutes", "30 min swim", "45 minutes boxing", "went for a 25 minute jog", "yoga for an hour".
+- For exercise estimates, use the activity type, duration, stated intensity/pace when available, and a reference body weight of about 90 kg for this user. Use a sensible standard MET/intensity assumption when intensity is not stated. Estimate ACTIVE exercise calories rather than total/resting-inclusive calories. Round to a useful whole-number estimate; do not pretend it is exact.
+- If the user explicitly provides exercise calories (including an Apple Watch number or a workout screenshot), ALWAYS use that value instead of estimating it. Treat manually supplied workout calories as a device/Apple Watch estimate unless the user says otherwise.
+- For EACH exercise event, always put calories_burned in event details when there is enough information for a reasonable estimate, and include calories_burned_source as "user_device" when supplied by the user/image or "estimated" when Tally calculated it.
+- Top-level exercise_calories MUST equal the combined calories_burned of all exercise events in this log. It should almost never be null when an activity and duration are given.
+- Recognize ordinary movement language as exercise when appropriate: walk/walking, hike, run/jog, boxing, swim, cycling/bike, yoga, Pilates, gym/strength training, dance, skiing, rowing, etc.
 - Top-level nutrition is the combined total of all food components in this log.
 ${knownFoodsList ? `\nKNOWN FOODS:\n${knownFoodsList}\nUse all saved nutrition fields when clearly the same item, scaling proportionally for the portion. Names do not need to be character-for-character identical.` : ''}
 
@@ -967,7 +978,7 @@ GOALS:
 Active goals are ${JSON.stringify(activeGoals)}.
 Return goal_keys only when the log clearly establishes that goal happened on the selected date. Do not award a star from implication or wishful language. A post-meal walk must actually be described as after/post-meal, not just any walk.
 
-EVENT TYPES may include: food, exercise, sleep, symptom, period_start, period_flow, spotting, medication, supplement, mood, measurement, life_event, day_status, other. Create multiple events when one log contains multiple distinct facts. Every event needs event_date. event_time should be an ISO local datetime like "2026-10-02T10:00:00" when known, otherwise null. Keep details compact but include resolved nutrition on food components and calories_burned on exercise events.
+EVENT TYPES may include: food, exercise, sleep, symptom, period_start, period_flow, spotting, medication, supplement, mood, measurement, life_event, day_status, other. Create multiple events when one log contains multiple distinct facts. Every event needs event_date. event_time should be an ISO local datetime like "2026-10-02T10:00:00" when known, otherwise null. Keep details compact but include resolved nutrition on food components and calories_burned plus calories_burned_source on exercise events. A plain duration-based activity such as "walk for 20 minutes" is an exercise event and must receive an estimated calorie burn.
 
 Set suggest_known_food true only when the log is essentially one reusable food/meal that would sensibly be saved as one Known Food. Set it false for mixed meals made from several components, especially when some components already came from Known Foods or an attached label.
 
