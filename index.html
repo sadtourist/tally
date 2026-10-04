@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Tally</title>
+<title>Tally v5</title>
 <link rel="icon" type="image/png" href="icon-512.png">
 <link rel="apple-touch-icon" href="icon-512.png">
 <meta name="theme-color" content="#ffffff">
@@ -262,16 +262,14 @@
         </div>
       </div>
       <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-stone-600 leading-relaxed">
-        <div>Avg kcal: <span id="rangeAvgCal">—</span></div>
-        <div>Avg protein: <span id="rangeAvgProtein">—</span></div>
-        <div>Avg fibre: <span id="rangeAvgFibre">—</span></div>
-        <div>Alcohol: <span id="rangeAlcoholUnits">—</span></div>
-        <div>Avg energy: <span id="rangeAvgEnergy">—</span></div>
-        <div>Avg hunger: <span id="rangeAvgHunger">—</span></div>
-        <div>Avg sleep: <span id="rangeAvgSleep">—</span></div>
-        <div>Days logged: <span id="rangeDaysLogged">0</span></div>
-        <div>Fibre: <span id="rangeFibreQuality">—</span></div>
+        <div>Calories: <span id="rangeAvgCal">—</span></div>
+        <div>Protein: <span id="rangeAvgProtein">—</span></div>
+        <div>Fibre: <span id="rangeAvgFibre">—</span></div>
         <div>Fruit & veg: <span id="rangePlantsQuality">—</span></div>
+        <div>Exercise burn: <span id="rangeAvgBurn">—</span></div>
+        <div>Sleep: <span id="rangeAvgSleep">—</span></div>
+        <div>Days logged: <span id="rangeDaysLogged">0</span></div>
+        <div>Alcohol: <span id="rangeAlcoholUnits">—</span></div>
       </div>
     </div>
 
@@ -972,6 +970,13 @@ FOOD / EXERCISE:
 - Top-level exercise_calories MUST equal the combined calories_burned of all exercise events in this log. It should almost never be null when an activity and duration are given.
 - Recognize ordinary movement language as exercise when appropriate: walk/walking, hike, run/jog, boxing, swim, cycling/bike, yoga, Pilates, gym/strength training, dance, skiing, rowing, etc.
 - Top-level nutrition is the combined total of all food components in this log.
+
+SLEEP:
+- When sleep duration is stated or can be reasonably calculated from a stated bedtime and wake time, create a sleep event with details.duration_hours as a decimal number (for example 7.5 for 7h30m).
+- If the user says "slept 8 hours last night", record duration_hours: 8 and assign the event to the date of the morning the sleep ended.
+- If both bedtime and wake time are supplied, calculate duration_hours when the interval is clear. Do not subtract guessed awake time.
+- Qualitative statements such as "slept badly" or "barely slept" are useful sleep observations, but do NOT invent a numeric duration_hours when no duration/times were given.
+- Preserve other useful stated sleep details (bedtime, wake_time, awakenings, quality) in details when available.
 ${knownFoodsList ? `\nKNOWN FOODS:\n${knownFoodsList}\nUse all saved nutrition fields when clearly the same item, scaling proportionally for the portion. Names do not need to be character-for-character identical.` : ''}
 
 GOALS:
@@ -1276,25 +1281,40 @@ Text log: "${text || '(none — inspect attached photos)'}"`;
 
     const avgProtein = proteinTotals.length ? proteinTotals.reduce((a, b) => a + b, 0) / proteinTotals.length : null;
     const avgFibre = fibreTotals.length ? fibreTotals.reduce((a, b) => a + b, 0) / fibreTotals.length : null;
-    const avgEnergy = avgKnown(rangeCheckins, 'energy');
-    const avgHunger = avgKnown(rangeCheckins, 'hunger');
-    const avgSleep = avgKnown(rangeCheckins, 'sleep');
     const alcoholTotal = sumKnown(rangeEntries, 'alcohol_units');
-    const usableRangeEntries = rangeEntries.filter(e => statuses[e.entry_date] !== 'incomplete');
-    const usableLoggedDays = new Set(usableRangeEntries.map(e => e.entry_date)).size;
     const plantTotals = usableDays.map(d => { const t=totalsForDate(d); return (t.vegetable_servings===null && t.fruit_servings===null) ? null : (t.vegetable_servings||0)+(t.fruit_servings||0); }).filter(v => v !== null);
     const avgPlants = plantTotals.length ? plantTotals.reduce((a,b)=>a+b,0)/plantTotals.length : null;
 
-    document.getElementById('rangeAvgCal').innerText = avgCal === null ? '—' : Math.round(avgCal);
-    document.getElementById('rangeAvgProtein').innerText = avgProtein === null ? '—' : Math.round(avgProtein) + 'g';
-    document.getElementById('rangeAvgFibre').innerText = avgFibre === null ? '—' : Math.round(avgFibre) + 'g';
-    document.getElementById('rangeAvgEnergy').innerText = avgEnergy === null ? '—' : avgEnergy.toFixed(1) + '/5';
-    document.getElementById('rangeAvgHunger').innerText = avgHunger === null ? '—' : avgHunger.toFixed(1) + '/5';
-    document.getElementById('rangeAvgSleep').innerText = avgSleep === null ? '—' : avgSleep.toFixed(1) + '/5';
-    document.getElementById('rangeDaysLogged').innerText = daysLogged + '/' + activeTrendDays;
-    document.getElementById('rangeAlcoholUnits').innerText = alcoholTotal === null ? '—' : alcoholTotal.toFixed(1).replace(/\.0$/, '') + ' units';
-    document.getElementById('rangeFibreQuality').innerText = avgFibre === null ? '—' : avgFibre.toFixed(1).replace(/\.0$/,'') + 'g/day';
+    // Exercise burn is averaged across the entire selected period, including non-exercise days.
+    const burnTotal = days.reduce((sum,d) => sum + (totalsForDate(d).exercise_calories || 0), 0);
+    const hasAnyBurn = days.some(d => totalsForDate(d).exercise_calories !== null);
+    const avgBurn = hasAnyBurn ? burnTotal / activeTrendDays : null;
+
+    // Sleep comes from natural-language structured sleep events, not the legacy check-in sliders.
+    // One numeric sleep duration per night/date; missing nights are omitted rather than counted as zero.
+    const sleepByDate = {};
+    for (const e of rangeEntries) {
+      for (const ev of parsedEvents(e)) {
+        if (ev.type !== 'sleep') continue;
+        const d = eventDate(ev, e.entry_date);
+        if (!days.includes(d)) continue;
+        let h = numericOrNull(ev.details?.duration_hours);
+        if (h === null) h = numericOrNull(ev.details?.hours);
+        if (h === null) h = numericOrNull(ev.details?.sleep_hours);
+        if (h !== null && h > 0 && h < 24) sleepByDate[d] = h;
+      }
+    }
+    const sleepValues = Object.values(sleepByDate);
+    const avgSleep = sleepValues.length ? sleepValues.reduce((a,b)=>a+b,0)/sleepValues.length : null;
+
+    document.getElementById('rangeAvgCal').innerText = avgCal === null ? '—' : Math.round(avgCal) + ' kcal/day';
+    document.getElementById('rangeAvgProtein').innerText = avgProtein === null ? '—' : Math.round(avgProtein) + 'g/day';
+    document.getElementById('rangeAvgFibre').innerText = avgFibre === null ? '—' : avgFibre.toFixed(1).replace(/\.0$/,'') + 'g/day';
     document.getElementById('rangePlantsQuality').innerText = avgPlants === null ? '—' : avgPlants.toFixed(1).replace(/\.0$/,'') + ' servings/day';
+    document.getElementById('rangeAvgBurn').innerText = avgBurn === null ? '—' : Math.round(avgBurn) + ' kcal/day';
+    document.getElementById('rangeAvgSleep').innerText = avgSleep === null ? '—' : avgSleep.toFixed(1).replace(/\.0$/,'') + ' hr/night (' + sleepValues.length + ' night' + (sleepValues.length === 1 ? '' : 's') + ')';
+    document.getElementById('rangeDaysLogged').innerText = daysLogged + ' / ' + activeTrendDays;
+    document.getElementById('rangeAlcoholUnits').innerText = alcoholTotal === null ? '—' : alcoholTotal.toFixed(1).replace(/\.0$/, '') + ' units total';
 
     // Feed (entries + check-ins merged, newest first)
     const feed = document.getElementById('feed');
@@ -1403,7 +1423,7 @@ Text log: "${text || '(none — inspect attached photos)'}"`;
     try {
       const prompt = `You are Tally's long-term pattern analyst. Analyze this person's ${activeTrendDays}-day personal log as a longitudinal record, not as a collection of isolated daily coincidences. Entries: ${JSON.stringify(recent)}. Check-ins: ${JSON.stringify(recentCheckins)}. Day-status map: ${JSON.stringify(statuses)}.
 
-${question ? `Their question is: "${question}"` : 'Give 2-4 useful observations about recurring routines, changes over time, established patterns, or meaningful shifts in the record.'}
+${question ? `Their question is: "${question}"` : 'Give 3-5 genuinely useful health observations. For each, identify the strongest supported pattern and a concrete, realistic next action that could improve health or help clarify what matters. Prioritize high-impact changes over cute or merely interesting facts.'}
 
 Rules:
 - Think broadly across time. Prioritize routines, frequency, repeated foods/meals, portion changes, exercise frequency, nutrition averages, sleep patterns, recurring symptoms, cycle context, medication/supplement changes, and changes from the person's own earlier baseline.
@@ -1420,8 +1440,14 @@ Rules:
 - Menstrual phases may be estimated only from logged period starts and cycle lengths. Label estimates as estimates. Do not infer ovulation from symptoms alone.
 - Never diagnose. Do not moralize food, body size, calories, or missed goals.
 - Write directly to the person using "you/your", not "the person".
-- Insights should sound like a thoughtful summary of their life over time, not a clinical event report.
-Return ONLY a JSON array of 2-4 strings, each under 38 words.`;
+- The goal is usefulness, not novelty or entertainment. Do not give "cute insights" that merely restate what was logged, but things that can be useful to the user going forward, prioritizing things they might not have realized themselves, using long-term data analysis.
+- Prioritize actionable areas such as nutrition balance, adequate protein/fibre/plants, alcohol pattern, exercise consistency/mix, sleep, recovery, symptoms, medication context, and sustainable routines when the data supports them.
+- Each default insight should contain BOTH: (1) the evidence/pattern in this person's logs and (2) a concrete next step. Example structure: "Your fibre has averaged X, but Y is inconsistent. Keep X and try Z this week."
+- Do not prescribe extreme restriction, crash dieting, compensatory exercise, or obsessive tracking. Do not diagnose or recommend changing prescribed medication without a clinician.
+- If the record is too sparse to support a health recommendation, say what specific information would make the analysis useful rather than inventing advice.
+- When the user asks a specific question, answer that question directly; recommendations may follow when supported.
+- Insights should sound like a practical health coach who knows this person's longitudinal record, not a novelty generator or clinical event report.
+Return ONLY a JSON array of 3-5 strings, each under 55 words.`;
       const body = JSON.stringify({ contents:[{parts:[{text:prompt}]}], generationConfig:{responseMimeType:'application/json'} });
       const res = await callGeminiWithRetry(body); const data = await res.json();
       const insights = JSON.parse(data.candidates[0].content.parts[0].text);
